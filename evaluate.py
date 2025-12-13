@@ -1,19 +1,21 @@
 import os
+import json
+import hashlib
+import datetime
+from pathlib import Path
 from typing import Any
 import torch
 from torch.utils.data import DataLoader
 import numpy as np
-from tqdm import tqdm
-import json
-import datetime
-import hashlib
+import lightning as L
 
 import config
 from src.dataset.vsi_dataset import VSIDataset
-from src.models.factory import get_model
-
+from src.models.lightning_module import FocusOffsetRegressor
+from src.models.factory import ModelArch
 
 RESULTS_FILE = config.PROJECT_ROOT / "evaluation_results.json"
+torch.set_float32_matmul_precision("medium")
 
 
 def load_persistent_results() -> list[dict[str, Any]]:
@@ -33,14 +35,12 @@ def save_persistent_result(entry: dict[str, Any]) -> None:
         json.dump(results, f, indent=4)
 
 
-def get_file_hash(filepath: str) -> str:
+def get_file_hash(filepath: str | Path) -> str:
     with open(filepath, "rb") as f:
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
-def get_existing_result(
-    arch_name: str, checkpoint_hash: str
-) -> dict[str, Any] | None:
+def get_existing_result(arch_name: str, checkpoint_hash: str) -> dict[str, Any] | None:
     results = load_persistent_results()
     matches = [
         r
@@ -53,19 +53,48 @@ def get_existing_result(
     return None
 
 
+def run_lightning_inference(
+    model: L.LightningModule, loader: DataLoader
+) -> tuple[float, float]:
+    """Runs inference using Lightning Trainer and manual calculation for std dev (since Trainer just gives avg)."""
+    # We use trainer.predict to get all raw outputs so we can calculate std dev and mae manually
+    trainer = L.Trainer(devices=1, logger=False, enable_progress_bar=True)
+
+    print("Starting evaluation via Lightning...")
+    predictions = trainer.predict(model, loader)
+
+    # predictions is a list of (outputs, targets) tuples from predict_step
+    all_errors = []
+
+    for batch_out, batch_targets in predictions:
+        # Move to CPU for numpy calc
+        batch_out = batch_out.cpu()
+        batch_targets = batch_targets.cpu()
+
+        abs_err = torch.abs(batch_out - batch_targets)
+        all_errors.extend(abs_err.view(-1).tolist())
+
+    errors = np.array(all_errors)
+    mae = np.mean(errors)
+    std = np.std(errors)
+
+    return float(mae), float(std)
+
+
 def evaluate() -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    L.seed_everything(42)
 
-    # Checkpoint path matches train.py structure
-    checkpoint_path = config.CHECKPOINT_DIR / config.MODEL_ARCH / "best_model.pth"
+    # Checkpoint path handling
+    # We only support Lightning .ckpt format now.
 
-    if not checkpoint_path.exists():
-        print(f"Checkpoint not found at {checkpoint_path}!")
+    ckpt_dir = config.CHECKPOINT_DIR / config.MODEL_ARCH
+    ckpt_path = ckpt_dir / "best_model.ckpt"
+    if not ckpt_path.exists():
+        print(f"Checkpoint not found at {ckpt_path}!")
         return
 
     # Calculate hash to ensure we match the exact file
-    checkpoint_hash = get_file_hash(checkpoint_path)
+    checkpoint_hash = get_file_hash(ckpt_path)
 
     # 0. Check for existing results
     current_arch = config.MODEL_ARCH.value
@@ -100,16 +129,15 @@ def evaluate() -> None:
     )
 
     # 2. Prepare Model
-    print(f"Loading Model: {config.MODEL_ARCH}...")
-    model = get_model(config.MODEL_ARCH, device)
+    print(f"Loading Model: {config.MODEL_ARCH} from {ckpt_path}...")
 
-    # We already checked existence above
-    state_dict = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(state_dict)
-    print(f"Loaded checkpoint from {checkpoint_path}")
+    # Load from Lightning Checkpoint
+    # We need to allow ModelArch in safe globals because it was saved as a hyperparameter
+    with torch.serialization.safe_globals([ModelArch]):
+        model = FocusOffsetRegressor.load_from_checkpoint(ckpt_path)
 
     # 3. Evaluate
-    mae, std = run_inference(model, loader, device)
+    mae, std = run_lightning_inference(model, loader)
 
     print("\n--- Test Evaluation Results ---")
     print(f"Architecture: {config.MODEL_ARCH}")
@@ -120,42 +148,15 @@ def evaluate() -> None:
     # Save Results
     result_entry = {
         "architecture": current_arch,
-        "mae": float(mae),
-        "std": float(std),
+        "mae": mae,
+        "std": std,
         "timestamp": datetime.datetime.now().isoformat(),
         # Convert path to string for JSON serialization
-        "checkpoint_path": str(checkpoint_path.relative_to(config.PROJECT_ROOT)),
+        "checkpoint_path": str(ckpt_path.relative_to(config.PROJECT_ROOT)),
         "checkpoint_sha256": checkpoint_hash,
     }
     save_persistent_result(result_entry)
     print(f"Results saved to {RESULTS_FILE}")
-
-
-def run_inference(
-    model: torch.nn.Module, loader: DataLoader, device: torch.device
-) -> tuple[float, float]:
-    """Runs inference on the dataset and returns MAE and Std Dev."""
-    model.eval()
-    errors = []
-
-    print("Starting evaluation...")
-    with torch.no_grad():
-        for images, targets in tqdm(loader, desc="Evaluating"):
-            images = images.to(device)
-            # targets are raw floats (micrometers)
-            targets = targets.to(device).unsqueeze(1)
-
-            outputs = model(images)
-
-            # Calculate Absolute Error
-            batch_errors = torch.abs(outputs - targets)
-            errors.extend(batch_errors.cpu().tolist())
-
-    errors = np.array(errors)
-    mae = np.mean(errors)
-    std = np.std(errors)
-
-    return mae, std
 
 
 if __name__ == "__main__":

@@ -1,70 +1,23 @@
 import os
-
 import torch
-import torch.nn as nn
-import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
-from tqdm import tqdm
+import lightning as L
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
+from lightning.pytorch.loggers import CSVLogger
 
 import config
 from src.dataset.vsi_dataset import VSIDataset
-from src.models.factory import get_model
+from src.models.lightning_module import FocusOffsetRegressor
 
-
-def train_one_epoch(
-    model: nn.Module,
-    loader: DataLoader,
-    criterion: nn.Module,
-    optimizer: optim.Optimizer,
-    device: torch.device,
-    epoch: int,
-) -> float:
-    model.train()
-    running_loss = 0.0
-
-    pbar = tqdm(loader, desc=f"Epoch {epoch} [Train]", leave=False)
-    for images, targets in pbar:
-        images = images.to(device)
-        targets = targets.to(device).unsqueeze(1)  # [Batch, 1]
-
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
-
-        running_loss += loss.item()
-        pbar.set_postfix({"loss": f"{loss.item():.4f}"})
-
-    avg_loss = running_loss / len(loader)
-    return avg_loss
-
-
-def validate(
-    model: nn.Module,
-    loader: DataLoader,
-    criterion: nn.Module,
-    device: torch.device,
-) -> float:
-    model.eval()
-    running_loss = 0.0
-    with torch.no_grad():
-        for images, targets in tqdm(loader, desc="Validation", leave=False):
-            images = images.to(device)
-            targets = targets.to(device).unsqueeze(1)
-
-            outputs = model(images)
-            loss = criterion(outputs, targets)
-            running_loss += loss.item()
-
-    return running_loss / len(loader)
+torch.set_float32_matmul_precision("medium")
 
 
 def main() -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    # 1. Setup Data
+    L.seed_everything(42)
+    device_str = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device strategy: {device_str}")
 
-    # 1. Prepare Data
     index_path = config.get_index_path("train")
     if not index_path.exists():
         print(f"Training index not found at {index_path}. Run preprocess first.")
@@ -75,7 +28,12 @@ def main() -> None:
     val_size = int(0.1 * total_size)
     train_size = total_size - val_size
 
-    train_subset, val_subset = random_split(full_dataset, [train_size, val_size])
+    # Ensure consistent split
+    train_subset, val_subset = random_split(
+        full_dataset,
+        [train_size, val_size],
+        generator=torch.Generator().manual_seed(42),
+    )
 
     print(f"Train samples: {train_size}, Val samples: {val_size}")
 
@@ -96,49 +54,45 @@ def main() -> None:
         persistent_workers=True,
     )
 
-    # 2. Prepare Model
-    model = get_model(config.MODEL_ARCH, device)
+    # 2. Setup Model
+    model = FocusOffsetRegressor(
+        arch_name=config.MODEL_ARCH, learning_rate=config.LEARNING_RATE
+    )
 
-    # 3. Optimization
-    criterion = nn.MSELoss()  # Regression loss
-    optimizer = optim.AdamW(model.parameters(), lr=config.LEARNING_RATE)
-
-    # 4. Training Loop
-    # Use model-specific checkpoint dir to avoid overwriting
+    # 3. Setup Callbacks & Logger
     checkpoint_dir = config.CHECKPOINT_DIR / config.MODEL_ARCH
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    best_loss = float("inf")
-    epochs_no_improve = 0
+    # Lightning uses strict path strings for checkpoints
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=str(checkpoint_dir),
+        filename="best_model",
+        monitor="val_loss",
+        mode="min",
+        save_top_k=1,
+        verbose=True,
+    )
+
+    early_stopping = EarlyStopping(
+        monitor="val_loss", patience=config.PATIENCE, mode="min", verbose=True
+    )
+
+    logger = CSVLogger(save_dir=str(checkpoint_dir), name="logs")
+
+    # 4. Trainer
+    trainer = L.Trainer(
+        max_epochs=config.EPOCHS,
+        precision="bf16-mixed",
+        callbacks=[checkpoint_callback, early_stopping],
+        logger=logger,
+        log_every_n_steps=10,
+    )
 
     print(f"Starting training for architecture: {config.MODEL_ARCH}")
+    trainer.fit(model, train_loader, val_loader)
 
-    for epoch in range(config.EPOCHS):
-        print(f"\n--- Epoch {epoch + 1}/{config.EPOCHS} ---")
-
-        train_loss = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, epoch + 1
-        )
-        val_loss = validate(model, val_loader, criterion, device)
-
-        print(f"Train Loss (MSE): {train_loss:.4f} | Val Loss (MSE): {val_loss:.4f}")
-
-        # Checkpointing
-        if val_loss < best_loss:
-            best_loss = val_loss
-            epochs_no_improve = 0
-            save_path = checkpoint_dir / "best_model.pth"
-            torch.save(model.state_dict(), save_path)
-            print(f"Saved new best model to {save_path}")
-        else:
-            epochs_no_improve += 1
-            print(f"No improvement for {epochs_no_improve} epochs.")
-
-        # Early Stopping
-        if epochs_no_improve >= config.PATIENCE:
-            print("Early stopping triggered.")
-            break
-
+    # Save best model path for reference
+    print(f"Best model path: {checkpoint_callback.best_model_path}")
     print("Training Complete.")
 
 

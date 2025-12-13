@@ -8,8 +8,8 @@ from torch.utils.data import DataLoader
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.dataset.vsi_dataset import VSIDataset
-import config
+from src.dataset.vsi_dataset import VSIDataset  # noqa: E402
+import config  # noqa: E402
 
 
 def main():

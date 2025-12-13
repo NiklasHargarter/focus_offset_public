@@ -8,13 +8,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.processing.preprocess import (
+from src.processing.preprocess import (  # noqa: E402
     compute_brenner_gradient,
     find_valid_patches,
     select_best_focus_slice,
     generate_tissue_mask,
-)
-from unittest.mock import MagicMock, patch
+)  # noqa: E402
+from unittest.mock import MagicMock, patch  # noqa: E402
 
 
 class TestImageMetrics(unittest.TestCase):
@@ -148,8 +148,6 @@ class TestTissueMasking(unittest.TestCase):
         mask = generate_tissue_mask(img)
 
         np.testing.assert_array_equal(mask, expected_mask)
-
-
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ class ModelArch(str, Enum):
     MOBILENET_V3_LARGE = "mobilenet_v3_large"
 
 
-def get_model(arch_name, device):
+def get_model(arch_name: ModelArch):
     """
     Returns a configured model for regression (1 output).
     Supported architectures:
@@ -29,7 +29,7 @@ def get_model(arch_name, device):
     - efficientnet_b0
     - mobilenet_v3_large
     """
-    print(f"Loading Model Architecture: {arch_name}...")
+    print(f"Loading Model Architecture: {arch_name.value}...")
 
     match arch_name:
         case ModelArch.CONVNEXT_TINY:
@@ -68,4 +68,4 @@ def get_model(arch_name, device):
                 f"Unknown architecture: {arch_name}. Supported: {[m.value for m in ModelArch]}"
             )
 
-    return model.to(device)
+    return model

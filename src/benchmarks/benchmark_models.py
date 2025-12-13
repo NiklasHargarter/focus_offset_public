@@ -7,12 +7,15 @@ import os
 from pathlib import Path
 import sys
 
+# Enable Tensor Cores
+torch.set_float32_matmul_precision("medium")
+
 # Add project root to path for imports
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
-import config
-from src.dataset.vsi_dataset import VSIDataset
-from src.models.factory import get_model, ModelArch
+import config  # noqa: E402
+from src.dataset.vsi_dataset import VSIDataset  # noqa: E402
+from src.models.factory import get_model, ModelArch  # noqa: E402
 
 
 def benchmark_architecture(
@@ -22,7 +25,7 @@ def benchmark_architecture(
 
     # Load Model
     try:
-        model = get_model(arch, device)
+        model = get_model(arch).to(device)
     except Exception as e:
         print(f"Failed to load model {arch}: {e}")
         return None

@@ -32,11 +32,11 @@ INDEX_PREFIX = "dataset_index"
 
 # Training Settings
 BATCH_SIZE = 16
-EPOCHS = 20
+EPOCHS = 50
 LEARNING_RATE = 1e-4
 PATIENCE = 5
 CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints"
-MODEL_ARCH = ModelArch.EFFICIENTNET_B0
+MODEL_ARCH = ModelArch.MOBILENET_V3_LARGE
 
 
 def get_index_path(mode: str) -> Path:

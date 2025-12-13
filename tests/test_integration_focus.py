@@ -1,5 +1,4 @@
 import unittest
-import os
 import sys
 import slideio
 from pathlib import Path
@@ -8,10 +7,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-import config
-from src.dataset.vsi_dataset import VSIDataset
-from src.utils.io_utils import suppress_stderr
-from src.processing.preprocess import compute_brenner_gradient
+import config  # noqa: E402
+from src.dataset.vsi_dataset import VSIDataset  # noqa: E402
+from src.utils.io_utils import suppress_stderr  # noqa: E402
+from src.processing.preprocess import compute_brenner_gradient  # noqa: E402
 
 
 class TestIntegrationFocus(unittest.TestCase):
