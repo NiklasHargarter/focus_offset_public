@@ -31,8 +31,8 @@ def create_split(force=False):
     random.shuffle(files)
 
     num_test = int(total_files * config.SPLIT_RATIO)
-    test_files = files[:num_test]
-    train_files = files[num_test:]
+    test_files = [os.path.basename(f) for f in files[:num_test]]
+    train_files = [os.path.basename(f) for f in files[num_test:]]
 
     split_data = {
         "train": train_files,

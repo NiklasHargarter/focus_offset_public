@@ -246,12 +246,12 @@ def process_slide(
 def resolve_file_list(split_files):
     """
     Validates existence of files listed in the split.
-    Assumes split_files contains valid absolute paths.
     """
     valid_files = []
     missing_files = []
 
-    for path in split_files:
+    for filename in split_files:
+        path = os.path.join(config.VSI_RAW_DIR, filename)
         if os.path.exists(path):
             valid_files.append(path)
         else:
