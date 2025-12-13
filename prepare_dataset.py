@@ -6,7 +6,7 @@ from src.processing.preprocess import preprocess_dataset
 from src.dataset.vsi_dataset import VSIDataset
 
 
-def main():
+def main() -> None:
     print("Starting Dataset Preparation Pipeline (Module-based)...")
 
     # 1. Download

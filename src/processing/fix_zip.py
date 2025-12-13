@@ -1,11 +1,11 @@
-import os
 import zipfile
 import shutil
 import config
 from src.utils.io_utils import suppress_stderr
+import slideio
 
 
-def fix_zip_structure():
+def fix_zip_structure() -> None:
     # 1. Setup Directories from Config
     # Input: VSI_ZIP_DIR (Zips)
     # Output: VSI_RAW_DIR (Extracted VSI + folders)
@@ -30,9 +30,6 @@ def fix_zip_structure():
 
     for zip_path in zips:
         # Check if extracted file already exists
-        # Assumption: zip name "foo.zip" contains "foo.vsi" or folder structure leading to it.
-        # However, exact filenames inside zips can vary.
-        # A simple heuristic: if "foo.vsi" exists in target, skip "foo.zip"
         expected_vsi_name = zip_path.name.replace(".zip", ".vsi")
         expected_vsi_path = extract_target / expected_vsi_name
 
@@ -43,15 +40,11 @@ def fix_zip_structure():
         print(f"Processing {zip_path.name}...")
 
         # We extract into the target dir directly
-        # The zip usually contains the .vsi and the _folder_ at root
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(extract_target)
 
     # 3. Post-Extraction Cleanup / Structure Fix
     print("\n--- Organizing and Verifying VSI Files ---")
-
-    # Dynamic import to avoid earlier dependency issues if slideio isn't needed for pure unzip
-    import slideio
 
     all_vsis = list(extract_target.rglob("*.vsi"))
 
@@ -90,7 +83,7 @@ def fix_zip_structure():
 
             # 1. Delete VSI File
             try:
-                os.remove(str(final_path))
+                final_path.unlink()
                 print(f"       Deleted corrupt file: {final_path.name}")
             except OSError as del_err:
                 print(f"       Failed to delete VSI: {del_err}")
@@ -115,7 +108,7 @@ def fix_zip_structure():
 
             if zip_path.exists():
                 try:
-                    os.remove(str(zip_path))
+                    zip_path.unlink()
                     print(
                         f"       Deleted source zip: {zip_name} (forcing re-download)"
                     )

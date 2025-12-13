@@ -1,23 +1,22 @@
-import os
 import random
 import json
 import config
 
 
-def create_split(force=False):
+def create_split(force: bool = False) -> None:
     """
     Scans the raw VSI directory and generates a train/test split JSON file.
     Does NOT require the files to be pre-processed first.
     """
-    if os.path.exists(config.SPLIT_FILE) and not force:
+    if config.SPLIT_FILE.exists() and not force:
         print(f"Split file {config.SPLIT_FILE} already exists. Skipping generation.")
         return
 
     print(f"Scanning {config.VSI_RAW_DIR} for VSI files...")
 
-    import glob
-
-    files = sorted(glob.glob(os.path.join(config.VSI_RAW_DIR, "*.vsi")))
+    # Use glob to match files, but ensure we work with Path objects if possible or string consistency
+    # config.VSI_RAW_DIR is a Path
+    files = sorted(list(config.VSI_RAW_DIR.glob("*.vsi")))
 
     total_files = len(files)
     print(f"Found {total_files} VSI files.")
@@ -31,8 +30,8 @@ def create_split(force=False):
     random.shuffle(files)
 
     num_test = int(total_files * config.SPLIT_RATIO)
-    test_files = [os.path.basename(f) for f in files[:num_test]]
-    train_files = [os.path.basename(f) for f in files[num_test:]]
+    test_files = [f.name for f in files[:num_test]]
+    train_files = [f.name for f in files[num_test:]]
 
     split_data = {
         "train": train_files,

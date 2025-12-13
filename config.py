@@ -35,8 +35,9 @@ BATCH_SIZE = 16
 EPOCHS = 20
 LEARNING_RATE = 1e-4
 PATIENCE = 5
-CHECKPOINT_DIR = "checkpoints"
+CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints"
 MODEL_ARCH = ModelArch.EFFICIENTNET_B0
+
 
 def get_index_path(mode: str) -> Path:
     """Returns the absolute path to the index file for a given split mode (train/test)."""

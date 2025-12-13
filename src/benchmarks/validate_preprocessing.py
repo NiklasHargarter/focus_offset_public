@@ -1,7 +1,7 @@
 import slideio
 import cv2
 import numpy as np
-import os
+from pathlib import Path
 
 from skimage.filters import threshold_otsu
 from src import config
@@ -13,7 +13,7 @@ from src.dataset.vsi_dataset import VSIDataset
 def analyze_otsu_stability(vsi_path, downscale=config.DOWNSCALE_FACTOR):
     try:
         with suppress_stderr():
-            slide = slideio.open_slide(vsi_path, "VSI")
+            slide = slideio.open_slide(str(vsi_path), "VSI")
         scene = slide.get_scene(0)
         width, height = scene.size
         num_z = scene.num_z_slices
@@ -21,7 +21,7 @@ def analyze_otsu_stability(vsi_path, downscale=config.DOWNSCALE_FACTOR):
         down_w = width // downscale
         down_h = height // downscale
 
-        print(f"\nAnalyzing {os.path.basename(vsi_path)} (Z={num_z})...")
+        print(f"\nAnalyzing {Path(vsi_path).name} (Z={num_z})...")
 
         results = []
 
@@ -78,7 +78,7 @@ def main():
     # Ensure index exists
     index_path = config.get_index_path("train")
 
-    if not os.path.exists(index_path):
+    if not index_path.exists():
         print(f"Index {index_path} not found. Run preprocess.py first.")
         return
 

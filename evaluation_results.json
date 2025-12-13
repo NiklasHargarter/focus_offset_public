@@ -1,0 +1,10 @@
+[
+    {
+        "architecture": "efficientnet_b0",
+        "mae": 0.2839,
+        "std": 0.3447,
+        "timestamp": "2025-12-13T10:37:56.305187",
+        "checkpoint_path": "checkpoints/efficientnet_b0/best_model.pth",
+        "checkpoint_sha256": "0301410797261e8c576d2e923576e70004d17b62ddc287ac1276ffb3a3ca1d88"
+    }
+]

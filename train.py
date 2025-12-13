@@ -11,7 +11,14 @@ from src.dataset.vsi_dataset import VSIDataset
 from src.models.factory import get_model
 
 
-def train_one_epoch(model, loader, criterion, optimizer, device, epoch):
+def train_one_epoch(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    optimizer: optim.Optimizer,
+    device: torch.device,
+    epoch: int,
+) -> float:
     model.train()
     running_loss = 0.0
 
@@ -33,7 +40,12 @@ def train_one_epoch(model, loader, criterion, optimizer, device, epoch):
     return avg_loss
 
 
-def validate(model, loader, criterion, device):
+def validate(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
+) -> float:
     model.eval()
     running_loss = 0.0
     with torch.no_grad():
@@ -48,13 +60,13 @@ def validate(model, loader, criterion, device):
     return running_loss / len(loader)
 
 
-def main():
+def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     # 1. Prepare Data
     index_path = config.get_index_path("train")
-    if not os.path.exists(index_path):
+    if not index_path.exists():
         print(f"Training index not found at {index_path}. Run preprocess first.")
         return
 
@@ -93,8 +105,8 @@ def main():
 
     # 4. Training Loop
     # Use model-specific checkpoint dir to avoid overwriting
-    checkpoint_dir = os.path.join(config.CHECKPOINT_DIR, config.MODEL_ARCH)
-    os.makedirs(checkpoint_dir, exist_ok=True)
+    checkpoint_dir = config.CHECKPOINT_DIR / config.MODEL_ARCH
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     best_loss = float("inf")
     epochs_no_improve = 0
@@ -115,7 +127,7 @@ def main():
         if val_loss < best_loss:
             best_loss = val_loss
             epochs_no_improve = 0
-            save_path = os.path.join(checkpoint_dir, "best_model.pth")
+            save_path = checkpoint_dir / "best_model.pth"
             torch.save(model.state_dict(), save_path)
             print(f"Saved new best model to {save_path}")
         else:

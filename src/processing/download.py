@@ -4,13 +4,16 @@ from exact_sync.v1.configuration import Configuration
 from exact_sync.v1.api_client import ApiClient
 from exact_sync.v1.api.images_api import ImagesApi
 from exact_sync.v1.api.image_sets_api import ImageSetsApi
+import json
 
 
-def download_dataset():
+def download_dataset() -> None:
     # 1. Setup API
     configuration = Configuration()
     configuration.username = "niklas.hargarter"
     configuration.password = os.environ.get("EXACT_PASSWORD")
+    if configuration.password is None:
+        raise ValueError("Environment variable 'EXACT_PASSWORD' is not set.")
     configuration.host = "https://exact.hs-flensburg.de"
 
     client = ApiClient(configuration)
@@ -26,7 +29,6 @@ def download_dataset():
     dataset_name = "ZStack_HE"
 
     # 3. Check Local Cache
-    import json
 
     cache_file = config.CACHE_DIR / "exact_images.json"
     target_images = []
@@ -58,7 +60,7 @@ def download_dataset():
             target_images.append({"id": image_id, "name": img_obj.name})
 
         # Save to cache
-        os.makedirs(cache_file.parent, exist_ok=True)
+        config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         with open(cache_file, "w") as f:
             json.dump(target_images, f, indent=4)
         print(f"Saved image list to cache: {cache_file}")

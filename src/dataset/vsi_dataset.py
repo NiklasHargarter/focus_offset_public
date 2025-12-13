@@ -4,7 +4,6 @@ import pickle
 import bisect
 import slideio
 from typing import Optional, Callable, Tuple, Any
-import os
 import config
 from src.utils.io_utils import suppress_stderr
 
@@ -26,7 +25,7 @@ class VSIDataset(Dataset):
         # Resolve path using config
         self.index_path = config.get_index_path(mode)
 
-        if not os.path.exists(self.index_path):
+        if not self.index_path.exists():
             raise FileNotFoundError(
                 f"Index not found at {self.index_path}. Run preprocess.py first."
             )
@@ -70,7 +69,7 @@ class VSIDataset(Dataset):
         if vsi_path not in self.slide_cache:
             try:
                 with suppress_stderr():
-                    slide = slideio.open_slide(vsi_path, "VSI")
+                    slide = slideio.open_slide(str(vsi_path), "VSI")
                 scene = slide.get_scene(0)
                 self.slide_cache[vsi_path] = (slide, scene)
             except Exception as e:

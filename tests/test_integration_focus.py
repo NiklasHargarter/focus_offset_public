@@ -2,27 +2,30 @@ import unittest
 import os
 import sys
 import slideio
+from pathlib import Path
 
-# Ensure src is in path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Add project root to sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(PROJECT_ROOT))
 
-from src import config
-from src.vsi_dataset import VSIDataset
-from src.io_utils import suppress_stderr
-from src.preprocess import compute_brenner_gradient
+import config
+from src.dataset.vsi_dataset import VSIDataset
+from src.utils.io_utils import suppress_stderr
+from src.processing.preprocess import compute_brenner_gradient
 
 
 class TestIntegrationFocus(unittest.TestCase):
     def test_dataset_focus_consistency(self):
         """Integration: Verify Z-offsets and focus checks on actual dataset."""
-        index_path = os.path.join(config.CACHE_DIR, "dataset_index_data_train.pkl")
+        # Use config to check existence, but rely on VSIDataset mainly
+        index_path = config.get_index_path("train")
 
-        if not os.path.exists(index_path):
+        if not index_path.exists():
             self.skipTest(
                 f"Dataset index not found at {index_path}. Run preprocess first."
             )
 
-        dataset = VSIDataset(index_path)
+        dataset = VSIDataset(mode="train")
         registry = dataset.index["file_registry"]
 
         if not registry:
@@ -40,11 +43,11 @@ class TestIntegrationFocus(unittest.TestCase):
         px, py, best_z = patches[0]
 
         # Open slide for validation details
-        if not os.path.exists(fname):
+        if not fname.exists():
             self.skipTest(f"Slide file {fname} not found.")
 
         with suppress_stderr():
-            slide = slideio.open_slide(fname, "VSI")
+            slide = slideio.open_slide(str(fname), "VSI")
         scene = slide.get_scene(0)
         z_res_microns = scene.z_resolution * 1e6
 

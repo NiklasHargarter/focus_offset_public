@@ -1,5 +1,7 @@
 import os
 import json
+from pathlib import Path
+from typing import Any
 
 import pickle
 import numpy as np
@@ -23,7 +25,9 @@ def compute_brenner_gradient(image: np.ndarray) -> int:
     return int(np.sum((gray - shifted) ** 2))
 
 
-def select_best_focus_slice(scene, width, height, num_z, down_w, down_h):
+def select_best_focus_slice(
+    scene: Any, width: int, height: int, num_z: int, down_w: int, down_h: int
+) -> np.ndarray:
     """Iterate all Z-slices to find the global best focus slice (grayscale)."""
     best_focus_score = -1
     best_img = None
@@ -39,21 +43,29 @@ def select_best_focus_slice(scene, width, height, num_z, down_w, down_h):
             best_focus_score = score
             best_img = gray
 
+    if best_img is None:
+        raise ValueError("No focus slice found (image set might be empty).")
+
     return best_img
 
 
-def generate_tissue_mask(image_gray):
+def generate_tissue_mask(image_gray: np.ndarray) -> np.ndarray:
     """Generate binary tissue mask via Otsu's method."""
-    if image_gray is None:
-        return None
     thresh = threshold_otsu(image_gray)
     # Tissue is darker than background in Brightfield
     return ((image_gray <= thresh) * 255).astype(np.uint8)
 
 
 def find_valid_patches(
-    mask, width, height, patch_size, stride, downscale_factor, down_w, down_h
-):
+    mask: np.ndarray,
+    width: int,
+    height: int,
+    patch_size: int,
+    stride: int,
+    downscale_factor: int,
+    down_w: int,
+    down_h: int,
+) -> list[tuple[int, int]]:
     """Scan mask/slide area to find valid patches based on tissue coverage."""
     valid_patches = []
     min_tissue_coverage = config.MIN_TISSUE_COVERAGE
@@ -86,16 +98,16 @@ def find_valid_patches(
 
 
 def resolve_patch_z_levels(
-    scene,
-    valid_patches,
-    width,
-    height,
-    num_z,
-    down_w,
-    down_h,
-    patch_size,
-    downscale_factor,
-):
+    scene: Any,
+    valid_patches: list[tuple[int, int]],
+    width: int,
+    height: int,
+    num_z: int,
+    down_w: int,
+    down_h: int,
+    patch_size: int,
+    downscale_factor: int,
+) -> list[tuple[int, int, int]]:
     """Determine the best Z-level for each identified patch."""
     num_patches = len(valid_patches)
     if num_patches == 0:
@@ -138,53 +150,56 @@ def resolve_patch_z_levels(
     return final_patches
 
 
-def save_visualization(
-    path,
-    image,
-    suffix="_mask.png",
-    is_patch_vis=False,
-    patches=None,
-    patch_size=None,
-    downscale_factor=None,
-):
-    """Helper to save mask or patch visualizations."""
-    os.makedirs(config.VIS_DIR, exist_ok=True)
-    basename = os.path.splitext(os.path.basename(path))[0]
-    out_path = os.path.join(config.VIS_DIR, f"{basename}{suffix}")
+def save_mask_visualization(
+    path: Path,
+    mask: np.ndarray,
+    suffix: str = "_mask.png",
+) -> None:
+    """Save a binary mask visualization."""
+    config.VIS_DIR.mkdir(parents=True, exist_ok=True)
+    basename = path.stem
+    out_path = config.VIS_DIR / f"{basename}{suffix}"
 
-    if is_patch_vis and patches is not None:
-        vis_img = (
-            np.zeros_like(image)
-            if image is not None
-            else np.zeros((100, 100), np.uint8)
-        )  # Fallback
-        # Recalculate if image provided is mask or new canvas
-        h, w = image.shape[:2]
-        vis_img = np.zeros((h, w), dtype=np.uint8)
+    cv2.imwrite(str(out_path), mask)
+    print(f"Saved visualization to {out_path}")
 
-        for vx, vy in patches:
-            dx = int(vx / downscale_factor)
-            dy = int(vy / downscale_factor)
-            dx_end = int((vx + patch_size) / downscale_factor)
-            dy_end = int((vy + patch_size) / downscale_factor)
-            cv2.rectangle(vis_img, (dx, dy), (dx_end, dy_end), 255, -1)
 
-        cv2.imwrite(out_path, vis_img)
-    else:
-        cv2.imwrite(out_path, image)
+def save_patch_visualization(
+    path: Path,
+    reference_shape: tuple[int, int],
+    patches: list[tuple[int, int]],
+    patch_size: int,
+    downscale_factor: int,
+    suffix: str = "_patch_mask.png",
+) -> None:
+    """Save a visualization of selected patches on a black canvas."""
+    config.VIS_DIR.mkdir(parents=True, exist_ok=True)
+    basename = path.stem
+    out_path = config.VIS_DIR / f"{basename}{suffix}"
 
+    h, w = reference_shape
+    vis_img = np.zeros((h, w), dtype=np.uint8)
+
+    for vx, vy in patches:
+        dx = int(vx / downscale_factor)
+        dy = int(vy / downscale_factor)
+        dx_end = int((vx + patch_size) / downscale_factor)
+        dy_end = int((vy + patch_size) / downscale_factor)
+        cv2.rectangle(vis_img, (dx, dy), (dx_end, dy_end), 255, -1)
+
+    cv2.imwrite(str(out_path), vis_img)
     print(f"Saved visualization to {out_path}")
 
 
 def process_slide(
-    vsi_path,
-    patch_size=config.PATCH_SIZE,
-    stride=config.STRIDE,
-    downscale_factor=config.DOWNSCALE_FACTOR,
-    otsu_threshold_rel=None,
-):
+    vsi_path: Path,
+    patch_size: int = config.PATCH_SIZE,
+    stride: int = config.STRIDE,
+    downscale_factor: int = config.DOWNSCALE_FACTOR,
+    otsu_threshold_rel: float | None = None,
+) -> dict[str, Any]:
     with suppress_stderr():
-        slide = slideio.open_slide(vsi_path, "VSI")
+        slide = slideio.open_slide(str(vsi_path), "VSI")
     scene = slide.get_scene(0)
     width, height = scene.size
     num_z = scene.num_z_slices
@@ -194,15 +209,12 @@ def process_slide(
     down_h = height // downscale_factor
 
     # 1. Select Best Focus Slice
+    # This now raises ValueError if it fails, which will be caught by the worker wrapper or crash intentionally
     best_gray_img = select_best_focus_slice(scene, width, height, num_z, down_w, down_h)
-
-    if best_gray_img is None:
-        print(f"Skipping {vsi_path}: Unable to find focus slice")
-        return None
 
     # 2. Generate Mask
     mask = generate_tissue_mask(best_gray_img)
-    save_visualization(vsi_path, mask, suffix="_mask.png")
+    save_mask_visualization(vsi_path, mask, suffix="_mask.png")
 
     # 3. Find Valid Patches
     valid_patches_spatial = find_valid_patches(
@@ -210,14 +222,13 @@ def process_slide(
     )
 
     # Visualise Patches
-    save_visualization(
+    save_patch_visualization(
         vsi_path,
-        mask,
-        suffix="_patch_mask.png",
-        is_patch_vis=True,
+        reference_shape=mask.shape[:2],
         patches=valid_patches_spatial,
         patch_size=patch_size,
         downscale_factor=downscale_factor,
+        suffix="_patch_mask.png",
     )
 
     # 4. Resolve Z-levels
@@ -233,7 +244,7 @@ def process_slide(
         downscale_factor,
     )  # Phase 2
 
-    print(f"Processed {os.path.basename(vsi_path)}: {len(final_patches)} valid patches")
+    print(f"Processed {vsi_path.name}: {len(final_patches)} valid patches")
     return {
         "path": vsi_path,
         "width": width,
@@ -243,7 +254,7 @@ def process_slide(
     }
 
 
-def resolve_file_list(split_files):
+def resolve_file_list(split_files: list[str]) -> list[Path]:
     """
     Validates existence of files listed in the split.
     """
@@ -251,8 +262,8 @@ def resolve_file_list(split_files):
     missing_files = []
 
     for filename in split_files:
-        path = os.path.join(config.VSI_RAW_DIR, filename)
-        if os.path.exists(path):
+        path = config.VSI_RAW_DIR / filename
+        if path.exists():
             valid_files.append(path)
         else:
             missing_files.append(path)
@@ -266,15 +277,15 @@ def resolve_file_list(split_files):
 
 
 def preprocess_dataset(
-    patch_size=config.PATCH_SIZE,
-    stride=config.STRIDE,
-    workers=os.cpu_count(),
-    force=False,
-):
+    patch_size: int = config.PATCH_SIZE,
+    stride: int = config.STRIDE,
+    workers: int | None = os.cpu_count(),
+    force: bool = False,
+) -> None:
     # Ensure cache directory exists
-    os.makedirs(config.CACHE_DIR, exist_ok=True)
+    config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not os.path.exists(config.SPLIT_FILE):
+    if not config.SPLIT_FILE.exists():
         print(
             f"Error: Split file {config.SPLIT_FILE} not found. Run create_split.py first."
         )
@@ -289,11 +300,9 @@ def preprocess_dataset(
         if split_name in ["seed", "total"]:
             continue  # Skip metadata keys
 
-        output_path = os.path.join(
-            config.CACHE_DIR, f"{config.INDEX_PREFIX}_{split_name}.pkl"
-        )
+        output_path = config.CACHE_DIR / f"{config.INDEX_PREFIX}_{split_name}.pkl"
 
-        if os.path.exists(output_path) and not force:
+        if output_path.exists() and not force:
             print(f"Index for {split_name} already exists at {output_path}. Skipping.")
             continue
 
@@ -306,9 +315,7 @@ def preprocess_dataset(
             print(f"No valid files found for split {split_name}. Skipping.")
             continue
 
-        output_path = os.path.join(
-            config.CACHE_DIR, f"{config.INDEX_PREFIX}_{split_name}.pkl"
-        )
+        output_path = config.CACHE_DIR / f"{config.INDEX_PREFIX}_{split_name}.pkl"
 
         print(f"Processing {len(files)} files for {split_name}...")
 
