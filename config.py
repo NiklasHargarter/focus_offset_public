@@ -7,8 +7,8 @@ from src.models.factory import ModelArch
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 # Patch extraction settings
-PATCH_SIZE = 512
-STRIDE = 512
+PATCH_SIZE = 224
+STRIDE = 224
 
 # Preprocessing settings
 DOWNSCALE_FACTOR = 8  # Reduced to preserve detail
@@ -19,6 +19,7 @@ VIS_DIR = PROJECT_ROOT / "visualizations"
 CACHE_DIR = PROJECT_ROOT / "cache"
 VSI_RAW_DIR = Path("/home/niklas/ZStack_HE/raws")  # Raw downloaded VSI files
 VSI_ZIP_DIR = Path("/home/niklas/ZStack_HE/zips")  # Intermediate ZIP downloads
+GENERATE_VISUALIZATIONS = True
 
 # Split Configuration
 SPLIT_FILE = PROJECT_ROOT / "splits.json"
@@ -31,7 +32,8 @@ SEARCH_SEED = 42
 INDEX_PREFIX = "dataset_index"
 
 # Training Settings
-BATCH_SIZE = 16
+BATCH_SIZE = 128
+NUM_WORKERS = 16
 EPOCHS = 50
 LEARNING_RATE = 1e-4
 PATIENCE = 5

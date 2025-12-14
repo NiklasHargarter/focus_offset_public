@@ -1,74 +1,109 @@
 import time
+import sys
+from pathlib import Path
+import os
 
-
+# Add project root to path for imports
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from torch.utils.data import DataLoader
-from src import config
+import config
 from src.dataset.vsi_dataset import VSIDataset
 
 
-def measure_throughput(loader, steps=50, warmup=100):
-    start_time = None
-    count = 0
-
+def measure_throughput(loader, steps=50, warmup=10):
     iter_loader = iter(loader)
 
     # Warmup
     for _ in range(warmup):
-        try:
-            next(iter_loader)
-        except StopIteration:
-            break
+        next(iter_loader)
 
     start_time = time.time()
-    try:
-        for _ in range(steps):
-            next(iter_loader)
-            count += 1
-    except StopIteration:
-        pass
+    for _ in range(steps):
+        next(iter_loader)
 
     end_time = time.time()
     duration = end_time - start_time
 
-    if count == 0:
-        return 0.0
-
-    items_per_sec = (count * loader.batch_size) / duration
+    items_per_sec = (steps * loader.batch_size) / duration
     return items_per_sec
 
 
 def main():
     print("--- VSI Loader Scaling Benchmark ---")
 
-    # Check checks strictly for visualization purposes here, though Dataset handles it too.
     if not config.get_index_path("train").exists():
         print("Index not found. Run preprocess first.")
         return
 
-    ds = VSIDataset(mode="train")
+    cpu_count = os.cpu_count() or 8
+    # Define search grid
+    worker_options = sorted(list(set([8, 16, cpu_count])))
+    # Limit workers to reasonable max (e.g. cpu_count * 1.5 rounded or just static list)
+    worker_options = [w for w in worker_options if w <= cpu_count + 4]
 
-    # Scenario 1: Single Process (num_workers=0)
-    print("\nScenario 1: Single Process (Workers=0)")
-    loader1 = DataLoader(ds, batch_size=16, num_workers=0, shuffle=True)
-    speed1 = measure_throughput(loader1)
-    print(f"-> Speed: {speed1:.1f} items/sec")
+    batch_size_options = [16, 32, 64, 128, 256]
 
-    ds = VSIDataset(mode="train")
-    # Scenario 2: Multi-Process (Workers=8)
-    print("\nScenario 2: Multi-Process (Workers=8)")
-    # Note: persistent_workers=True is crucial for efficiency
-    loader2 = DataLoader(
-        ds, batch_size=16, num_workers=8, shuffle=True, persistent_workers=True
+    print(f"Testing Workers: {worker_options}")
+    print(f"Testing Batch Sizes: {batch_size_options}")
+    print("-" * 60)
+
+    results = []
+    best_throughput = 0.0
+    best_config = (0, 0)
+
+    # Header
+    print(
+        f"{'Workers':<10} {'Batch Size':<12} {'Avg Throughput (img/s)':<25} {'Runs':<20}"
     )
-    speed2 = measure_throughput(loader2)
-    print(f"-> Speed: {speed2:.1f} items/sec")
 
-    print("\n--- Summary ---")
-    print(f"Workers=0: {speed1:.1f} items/sec")
-    print(f"Workers=2: {speed2:.1f} items/sec")
+    for num_workers in worker_options:
+        for batch_size in batch_size_options:
+            try:
+                # Run 3 trials
+                trial_speeds = []
+                for i in range(3):
+                    # Re-initialize dataset for each run to avoid side-effects
+                    ds = VSIDataset(mode="train")
 
-    if speed1 > 0:
-        print(f"Speedup: {speed2 / speed1:.1f}x")
+                    # persistent_workers must be False if num_workers is 0
+                    use_persistent = num_workers > 0
+
+                    loader = DataLoader(
+                        ds,
+                        batch_size=batch_size,
+                        num_workers=num_workers,
+                        shuffle=True,
+                        persistent_workers=use_persistent,
+                        pin_memory=True,
+                    )
+
+                    # Using fewer steps for larger batches to save time, or keep constant?
+                    # throughput measurement should be robust. Let's keep 50 steps.
+                    speed = measure_throughput(loader, steps=50, warmup=20)
+                    trial_speeds.append(speed)
+
+                avg_speed = sum(trial_speeds) / len(trial_speeds)
+                runs_str = str([round(s, 1) for s in trial_speeds])
+
+                print(
+                    f"{num_workers:<10} {batch_size:<12} {avg_speed:<25.1f} {runs_str:<20}"
+                )
+
+                results.append((num_workers, batch_size, avg_speed))
+
+                if avg_speed > best_throughput:
+                    best_throughput = avg_speed
+                    best_config = (num_workers, batch_size)
+
+            except Exception as e:
+                print(f"{num_workers:<10} {batch_size:<12} {'Failed':<25} ({e})")
+
+    print("-" * 60)
+    print("\n--- Optimization Result ---")
+    print(f"Highest Avg Throughput: {best_throughput:.1f} items/sec")
+    print(
+        f"Optimal Configuration: Workers={best_config[0]}, Batch Size={best_config[1]}"
+    )
 
 
 if __name__ == "__main__":

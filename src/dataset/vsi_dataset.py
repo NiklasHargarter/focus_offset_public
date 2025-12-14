@@ -30,7 +30,7 @@ class VSIDataset(Dataset):
                 f"Index not found at {self.index_path}. Run preprocess.py first."
             )
 
-        print(f"Loading dataset index from: {self.index_path}")
+        # print(f"Loading dataset index from: {self.index_path}")
         with open(self.index_path, "rb") as f:
             self.index = pickle.load(f)
 

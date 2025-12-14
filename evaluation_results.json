@@ -14,5 +14,13 @@
         "timestamp": "2025-12-13T13:10:58.238810",
         "checkpoint_path": "checkpoints/efficientnet_b0/best_model.ckpt",
         "checkpoint_sha256": "9e5a0897ef120365cca3c3c8041f7705cf3231ee405a68b01066e05f0a8d960b"
+    },
+    {
+        "architecture": "mobilenet_v3_large",
+        "mae": 0.2793737965630485,
+        "std": 0.3523158180313943,
+        "timestamp": "2025-12-14T13:22:17.489050",
+        "checkpoint_path": "checkpoints/mobilenet_v3_large/best_model.ckpt",
+        "checkpoint_sha256": "fedf829a6ab15fb096d4214fd45575e1068b4322a4c2f11e65633d0b5d707770"
     }
 ]

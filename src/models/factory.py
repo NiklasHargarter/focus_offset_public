@@ -6,6 +6,7 @@ from torchvision.models import (
     ResNet50_Weights,
     EfficientNet_B0_Weights,
     MobileNet_V3_Large_Weights,
+    ViT_B_16_Weights,
 )
 
 from enum import Enum
@@ -17,6 +18,7 @@ class ModelArch(str, Enum):
     RESNET50 = "resnet50"
     EFFICIENTNET_B0 = "efficientnet_b0"
     MOBILENET_V3_LARGE = "mobilenet_v3_large"
+    VIT_B_16 = "vit_b_16"
 
 
 def get_model(arch_name: ModelArch):
@@ -28,6 +30,7 @@ def get_model(arch_name: ModelArch):
     - resnet50
     - efficientnet_b0
     - mobilenet_v3_large
+    - vit_b_16
     """
     print(f"Loading Model Architecture: {arch_name.value}...")
 
@@ -62,6 +65,12 @@ def get_model(arch_name: ModelArch):
             last_layer_idx = len(model.classifier) - 1
             num_features = model.classifier[last_layer_idx].in_features
             model.classifier[last_layer_idx] = nn.Linear(num_features, 1)
+
+        case ModelArch.VIT_B_16:
+            model = models.vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1)
+
+            num_features = model.heads.head.in_features
+            model.heads.head = nn.Linear(num_features, 1)
 
         case _:
             raise ValueError(

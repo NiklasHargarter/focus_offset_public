@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import os
 from pathlib import Path
 import sys
 
@@ -19,7 +18,7 @@ from src.models.factory import get_model, ModelArch  # noqa: E402
 
 
 def benchmark_architecture(
-    arch, dataset, device, batch_size=config.BATCH_SIZE, num_steps=50
+    arch, dataset, device, batch_size=config.BATCH_SIZE, num_steps=500
 ):
     print(f"\nBenchmarking architecture: {arch.value}")
 
@@ -38,27 +37,25 @@ def benchmark_architecture(
         dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=os.cpu_count(),
+        num_workers=config.NUM_WORKERS,
         pin_memory=True if device.type == "cuda" else False,
         drop_last=True,
+        persistent_workers=True,
     )
 
     # Warmup
     print("  Warming up...")
     iter_loader = iter(loader)
-    for _ in range(10):
-        try:
-            images, targets = next(iter_loader)
-        except StopIteration:
-            iter_loader = iter(loader)
-            images, targets = next(iter_loader)
+    for _ in range(100):
+        images, targets = next(iter_loader)
 
         images = images.to(device)
         targets = targets.to(device).unsqueeze(1)
 
         optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, targets)
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+            outputs = model(images)
+            loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
 
@@ -68,18 +65,15 @@ def benchmark_architecture(
     start_time = time.time()
 
     for _ in range(num_steps):
-        try:
-            images, targets = next(iter_loader)
-        except StopIteration:
-            iter_loader = iter(loader)
-            images, targets = next(iter_loader)
+        images, targets = next(iter_loader)
 
         images = images.to(device)
         targets = targets.to(device).unsqueeze(1)
 
         optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, targets)
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+            outputs = model(images)
+            loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
 
@@ -117,9 +111,6 @@ def main():
         return
 
     print("Loading dataset...")
-    # Using a subset for faster loading if needed, but VSIDataset is fast.
-    # However, to avoid waiting for millions of items in __len__, VSIDataset loads index in init.
-    # It should be quick.
     dataset = VSIDataset(mode="train")
     print(f"Dataset Size: {len(dataset)}")
 

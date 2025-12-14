@@ -196,7 +196,6 @@ def process_slide(
     patch_size: int = config.PATCH_SIZE,
     stride: int = config.STRIDE,
     downscale_factor: int = config.DOWNSCALE_FACTOR,
-    otsu_threshold_rel: float | None = None,
 ) -> dict[str, Any]:
     with suppress_stderr():
         slide = slideio.open_slide(str(vsi_path), "VSI")
@@ -214,7 +213,8 @@ def process_slide(
 
     # 2. Generate Mask
     mask = generate_tissue_mask(best_gray_img)
-    save_mask_visualization(vsi_path, mask, suffix="_mask.png")
+    if config.GENERATE_VISUALIZATIONS:
+        save_mask_visualization(vsi_path, mask, suffix="_mask.png")
 
     # 3. Find Valid Patches
     valid_patches_spatial = find_valid_patches(
@@ -222,14 +222,15 @@ def process_slide(
     )
 
     # Visualise Patches
-    save_patch_visualization(
-        vsi_path,
-        reference_shape=mask.shape[:2],
-        patches=valid_patches_spatial,
-        patch_size=patch_size,
-        downscale_factor=downscale_factor,
-        suffix="_patch_mask.png",
-    )
+    if config.GENERATE_VISUALIZATIONS:
+        save_patch_visualization(
+            vsi_path,
+            reference_shape=mask.shape[:2],
+            patches=valid_patches_spatial,
+            patch_size=patch_size,
+            downscale_factor=downscale_factor,
+            suffix="_patch_mask.png",
+        )
 
     # 4. Resolve Z-levels
     final_patches = resolve_patch_z_levels(
@@ -276,14 +277,27 @@ def resolve_file_list(split_files: list[str]) -> list[Path]:
     return sorted(valid_files)
 
 
+def get_config_state() -> dict[str, Any]:
+    """Capture current configuration relevant to dataset generation."""
+    return {
+        "PATCH_SIZE": config.PATCH_SIZE,
+        "STRIDE": config.STRIDE,
+        "DOWNSCALE_FACTOR": config.DOWNSCALE_FACTOR,
+        "MIN_TISSUE_COVERAGE": config.MIN_TISSUE_COVERAGE,
+    }
+
+
 def preprocess_dataset(
     patch_size: int = config.PATCH_SIZE,
     stride: int = config.STRIDE,
-    workers: int | None = os.cpu_count(),
+    workers: int | None = None,
     force: bool = False,
 ) -> None:
     # Ensure cache directory exists
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    if workers is None:
+        workers = os.cpu_count()
 
     if not config.SPLIT_FILE.exists():
         print(
@@ -295,6 +309,9 @@ def preprocess_dataset(
     with open(config.SPLIT_FILE, "r") as f:
         splits = json.load(f)
 
+    current_config = get_config_state()
+    print("Current Configuration State:", current_config)
+
     # Process each split independently
     for split_name, split_files in splits.items():
         if split_name in ["seed", "total"]:
@@ -302,8 +319,32 @@ def preprocess_dataset(
 
         output_path = config.CACHE_DIR / f"{config.INDEX_PREFIX}_{split_name}.pkl"
 
+        should_generate = force
+
         if output_path.exists() and not force:
-            print(f"Index for {split_name} already exists at {output_path}. Skipping.")
+            try:
+                with open(output_path, "rb") as f:
+                    existing_data = pickle.load(f)
+
+                # Check if config matches
+                cached_config = existing_data.get("config_state", {})
+
+                if cached_config == current_config:
+                    print(
+                        f"Index for {split_name} exists and config matches. Skipping."
+                    )
+                    should_generate = False
+                else:
+                    print(f"Index for {split_name} exists but config mismatch.")
+                    print(f"  Cached: {cached_config}")
+                    print(f"  Current: {current_config}")
+                    print("  -> Triggering regeneration.")
+                    should_generate = True
+            except Exception as e:
+                print(f"Error reading existing index {output_path}: {e}. Regenerating.")
+                should_generate = True
+
+        if not should_generate:
             continue
 
         print(f"\n=== Generating Index for Split: {split_name.upper()} ===")
@@ -314,8 +355,6 @@ def preprocess_dataset(
         if not files:
             print(f"No valid files found for split {split_name}. Skipping.")
             continue
-
-        output_path = config.CACHE_DIR / f"{config.INDEX_PREFIX}_{split_name}.pkl"
 
         print(f"Processing {len(files)} files for {split_name}...")
 
@@ -352,6 +391,7 @@ def preprocess_dataset(
             "cumulative_indices": np.array(cumulative_indices, dtype=np.int64),
             "total_samples": cumulative_count,
             "patch_size": patch_size,
+            "config_state": current_config,  # Save configuration state
         }
 
         with open(output_path, "wb") as f:
