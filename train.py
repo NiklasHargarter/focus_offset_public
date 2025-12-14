@@ -1,5 +1,6 @@
-import os
 import torch
+import warnings
+
 from torch.utils.data import DataLoader, random_split
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
@@ -9,6 +10,9 @@ import config
 from src.dataset.vsi_dataset import VSIDataset
 from src.models.lightning_module import FocusOffsetRegressor
 
+warnings.filterwarnings(
+    "ignore", ".*Precision bf16-mixed is not supported by the model summary.*"
+)
 torch.set_float32_matmul_precision("medium")
 
 
@@ -41,7 +45,7 @@ def main() -> None:
         train_subset,
         batch_size=config.BATCH_SIZE,
         shuffle=True,
-        num_workers=os.cpu_count(),
+        num_workers=config.NUM_WORKERS,
         persistent_workers=True,
         pin_memory=True if torch.cuda.is_available() else False,
     )
@@ -50,7 +54,7 @@ def main() -> None:
         val_subset,
         batch_size=config.BATCH_SIZE,
         shuffle=False,
-        num_workers=os.cpu_count(),
+        num_workers=config.NUM_WORKERS,
         persistent_workers=True,
     )
 
@@ -70,11 +74,11 @@ def main() -> None:
         monitor="val_loss",
         mode="min",
         save_top_k=1,
-        verbose=True,
+        verbose=False,
     )
 
     early_stopping = EarlyStopping(
-        monitor="val_loss", patience=config.PATIENCE, mode="min", verbose=True
+        monitor="val_loss", patience=config.PATIENCE, mode="min", verbose=False
     )
 
     logger = CSVLogger(save_dir=str(checkpoint_dir), name="logs")
@@ -85,7 +89,8 @@ def main() -> None:
         precision="bf16-mixed",
         callbacks=[checkpoint_callback, early_stopping],
         logger=logger,
-        log_every_n_steps=10,
+        log_every_n_steps=50,
+        enable_model_summary=False,
     )
 
     print(f"Starting training for architecture: {config.MODEL_ARCH}")

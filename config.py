@@ -38,7 +38,7 @@ EPOCHS = 50
 LEARNING_RATE = 1e-4
 PATIENCE = 5
 CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints"
-MODEL_ARCH = ModelArch.MOBILENET_V3_LARGE
+MODEL_ARCH = ModelArch.VIT_B_16
 
 
 def get_index_path(mode: str) -> Path:
