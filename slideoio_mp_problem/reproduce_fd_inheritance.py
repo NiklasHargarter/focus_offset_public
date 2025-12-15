@@ -6,8 +6,7 @@ import sys
 # Demonstrates File Descriptor (FD) inheritance across fork
 # Usage: python reproduce_fd_inheritance.py [path_to_vsi]
 
-DEFAULT_VSI = "data_train/001_1_HE_stack.vsi"
-
+DEFAULT_VSI = "/home/niklas/ZStack_HE/raws/001_1_HE_stack.vsi"
 
 def main():
     vsi_file = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_VSI

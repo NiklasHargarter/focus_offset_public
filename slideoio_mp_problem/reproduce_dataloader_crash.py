@@ -8,7 +8,7 @@ import sys
 # This pattern creates unsafe sharing of C++ slideio objects across processes.
 # Usage: python reproduce_dataloader_crash.py [path_to_vsi]
 
-DEFAULT_VSI = "data_train/001_1_HE_stack.vsi"
+DEFAULT_VSI = "/home/niklas/ZStack_HE/raws/001_1_HE_stack.vsi"
 
 
 class UnsafeDataset(Dataset):
