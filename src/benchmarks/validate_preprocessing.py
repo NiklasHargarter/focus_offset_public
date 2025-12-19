@@ -1,13 +1,18 @@
 import slideio
 import cv2
 import numpy as np
+import sys
 from pathlib import Path
 
-from skimage.filters import threshold_otsu
-from src import config
-from src.utils.io_utils import suppress_stderr
-from src.processing.preprocess import compute_brenner_gradient
-from src.dataset.vsi_dataset import VSIDataset
+# Add project root to sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.append(str(PROJECT_ROOT))
+
+from skimage.filters import threshold_otsu  # noqa: E402
+import config  # noqa: E402
+from src.utils.io_utils import suppress_stderr  # noqa: E402
+from src.processing.preprocess import compute_brenner_gradient  # noqa: E402
+from src.dataset.vsi_dataset import VSIDataset  # noqa: E402
 
 
 def analyze_otsu_stability(vsi_path, downscale=config.DOWNSCALE_FACTOR):

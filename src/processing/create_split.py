@@ -1,51 +1,52 @@
 import random
 import json
 import config
+from src.utils.exact_utils import get_exact_image_list
 
 
 def create_split(force: bool = False) -> None:
-    """
-    Scans the raw VSI directory and generates a train/test split JSON file.
-    Does NOT require the files to be pre-processed first.
-    """
+    """Generates a 3-way split (train/val/test) based on EXACT image list."""
     if config.SPLIT_FILE.exists() and not force:
         print(f"Split file {config.SPLIT_FILE} already exists. Skipping generation.")
         return
 
-    print(f"Scanning {config.VSI_RAW_DIR} for VSI files...")
+    print("Fetching image list from EXACT...")
+    images = get_exact_image_list()
+    filenames = sorted([img["name"] for img in images])
 
-    # Use glob to match files, but ensure we work with Path objects if possible or string consistency
-    # config.VSI_RAW_DIR is a Path
-    files = sorted(list(config.VSI_RAW_DIR.glob("*.vsi")))
-
-    total_files = len(files)
-    print(f"Found {total_files} VSI files.")
+    total_files = len(filenames)
+    print(f"Found {total_files} total VSI files in EXACT.")
 
     if total_files == 0:
         print("No files found. Aborting.")
         return
 
-    # Shuffle and Split
     random.seed(config.SEARCH_SEED)
-    random.shuffle(files)
+    random.shuffle(filenames)
 
     num_test = int(total_files * config.SPLIT_RATIO)
-    test_files = [f.name for f in files[:num_test]]
-    train_files = [f.name for f in files[num_test:]]
+    test_files = filenames[:num_test]
+    remaining = filenames[num_test:]
+
+    num_val = int(len(remaining) * config.VAL_RATIO)
+    val_files = remaining[:num_val]
+    train_files = remaining[num_val:]
 
     split_data = {
-        "train": train_files,
-        "test": test_files,
+        "train": sorted(train_files),
+        "val": sorted(val_files),
+        "test": sorted(test_files),
         "seed": config.SEARCH_SEED,
         "total": total_files,
     }
 
-    # Save
+    config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     with open(config.SPLIT_FILE, "w") as f:
         json.dump(split_data, f, indent=4)
 
-    print("Split created!")
+    print("\n--- 3-Way Split Created ---")
     print(f"Train: {len(train_files)}")
+    print(f"Val:   {len(val_files)}")
     print(f"Test:  {len(test_files)}")
     print(f"Saved to: {config.SPLIT_FILE}")
 

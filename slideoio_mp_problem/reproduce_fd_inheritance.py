@@ -8,6 +8,7 @@ import sys
 
 DEFAULT_VSI = "/home/niklas/ZStack_HE/raws/001_1_HE_stack.vsi"
 
+
 def main():
     vsi_file = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_VSI
 

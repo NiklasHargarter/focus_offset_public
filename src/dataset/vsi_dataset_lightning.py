@@ -1,35 +1,24 @@
 import torch
 from torch.utils.data import Dataset
-import pickle
 import bisect
 import slideio
 from typing import Optional, Callable, Tuple, Any
-import config
 from src.utils.io_utils import suppress_stderr
 
 
-class VSIDataset(Dataset):
+class VSIDatasetLightning(Dataset):
     """
-    Efficient Dataset for flattened Z-level VSI patches.
-    Consumes the master index and filters based on split configuration.
+    Lightning-native version of VSIDataset.
+    Does NOT handle index loading from disk.
     """
 
     def __init__(
         self,
-        mode: str,
+        index_data: dict,
         transform: Optional[Callable[[Any], torch.Tensor]] = None,
     ):
-        self.mode = mode
+        self.index = index_data
         self.transform = transform
-        self.index_path = config.get_index_path(mode)
-
-        if not self.index_path.exists():
-            raise FileNotFoundError(
-                f"Index not found at {self.index_path}. Run preprocess.py first."
-            )
-
-        with open(self.index_path, "rb") as f:
-            self.index = pickle.load(f)
 
         self.file_registry = self.index["file_registry"]
         self.cumulative_indices = self.index["cumulative_indices"]

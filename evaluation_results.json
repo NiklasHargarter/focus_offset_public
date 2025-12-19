@@ -22,5 +22,13 @@
         "timestamp": "2025-12-14T13:22:17.489050",
         "checkpoint_path": "checkpoints/mobilenet_v3_large/best_model.ckpt",
         "checkpoint_sha256": "fedf829a6ab15fb096d4214fd45575e1068b4322a4c2f11e65633d0b5d707770"
+    },
+    {
+        "architecture": "vit_b_16",
+        "mae": 0.4153415153836081,
+        "std": 0.4761820256135952,
+        "timestamp": "2025-12-18T16:41:57.543417",
+        "checkpoint_path": "checkpoints/vit_b_16/best_model.ckpt",
+        "checkpoint_sha256": "c4b7e2c452c69240124b263ee607728f8af6ecc7e04355ed9242d1677f052005"
     }
 ]

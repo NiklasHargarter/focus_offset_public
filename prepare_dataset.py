@@ -7,45 +7,43 @@ from src.dataset.vsi_dataset import VSIDataset
 
 
 def main() -> None:
-    print("Starting Dataset Preparation Pipeline (Module-based)...")
+    print("Starting Dataset Preparation Pipeline...")
 
-    # 1. Download
-    print("\n--- Run Step 1: Download from EXACT ---")
+    print("\n--- Step 1: Download ---")
     try:
         download_dataset()
     except Exception as e:
-        print(f"Error executing download_dataset: {e}")
+        print(f"Error: {e}")
         sys.exit(1)
 
-    # 2. Fix Zip
-    print("\n--- Run Step 2: Extract & Fix Structure ---")
+    print("\n--- Step 2: Extract & Fix ---")
     try:
         fix_zip_structure()
     except Exception as e:
-        print(f"Error executing fix_zip_structure: {e}")
+        print(f"Error: {e}")
         sys.exit(1)
 
-    # 3. Create Split
-    print("\n--- Run Step 3: Create Train/Test Split ---")
+    print("\n--- Step 3: Create Splits ---")
     try:
         create_split()
     except Exception as e:
-        print(f"Error executing create_split: {e}")
+        print(f"Error: {e}")
         sys.exit(1)
 
-    # 4. Preprocess
-    print("\n--- Run Step 4: Preprocess VSI Files ---")
+    print("\n--- Step 4: Preprocess ---")
     try:
         preprocess_dataset()
     except Exception as e:
-        print(f"Error executing preprocess_dataset: {e}")
+        print(f"Error: {e}")
         sys.exit(1)
 
-    # 5. Verify
-    print("\n--- Run Step 5: Verification ---")
+    print("\n--- Step 5: Verification ---")
     try:
         ds_train = VSIDataset(mode="train")
         print(f"[OK] Train Dataset loadable: {len(ds_train)} samples.")
+
+        ds_val = VSIDataset(mode="val")
+        print(f"[OK] Val Dataset loadable: {len(ds_val)} samples.")
 
         ds_test = VSIDataset(mode="test")
         print(f"[OK] Test Dataset loadable: {len(ds_test)} samples.")

@@ -1,119 +1,92 @@
 import zipfile
 import shutil
+from pathlib import Path
 import config
 from src.utils.io_utils import suppress_stderr
 import slideio
 
 
-def fix_zip_structure() -> None:
-    # 1. Setup Directories from Config
-    # Input: VSI_ZIP_DIR (Zips)
-    # Output: VSI_RAW_DIR (Extracted VSI + folders)
+def extract_zip(zip_path: Path, extract_target: Path) -> bool:
+    """Extracts a zip file if the VSI is not already present."""
+    expected_vsi_name = zip_path.name.replace(".zip", ".vsi")
+    expected_vsi_path = extract_target / expected_vsi_name
 
-    zip_source = config.VSI_ZIP_DIR
-    extract_target = config.VSI_RAW_DIR
+    if expected_vsi_path.exists():
+        return False
 
-    extract_target.mkdir(parents=True, exist_ok=True)
+    print(f"Extracting {zip_path.name}...")
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(extract_target)
+    return True
 
-    print(f"Source Zips: {zip_source}")
-    print(f"Extract Destination: {extract_target}")
 
-    if not zip_source.exists():
-        print(f"Error: Zip directory {zip_source} does not exist.")
-        return
-
-    # 2. Iterate and Extract
-    zips = list(zip_source.glob("*.zip"))
-    if not zips:
-        print("No .zip files found to extract.")
-        return
-
-    for zip_path in zips:
-        # Check if extracted file already exists
-        expected_vsi_name = zip_path.name.replace(".zip", ".vsi")
-        expected_vsi_path = extract_target / expected_vsi_name
-
-        if expected_vsi_path.exists():
-            print(f"Skipping {zip_path.name} (VSI already exists).")
-            continue
-
-        print(f"Processing {zip_path.name}...")
-
-        # We extract into the target dir directly
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(extract_target)
-
-    # 3. Post-Extraction Cleanup / Structure Fix
-    print("\n--- Organizing and Verifying VSI Files ---")
-
+def organize_vsi_files(extract_target: Path) -> None:
+    """Moves nested VSIs to the base directory."""
     all_vsis = list(extract_target.rglob("*.vsi"))
-
     for vsi_file in all_vsis:
-        # Move if nested
-        final_path = vsi_file
         if vsi_file.parent != extract_target:
             dest = extract_target / vsi_file.name
             if not dest.exists():
                 print(f"Moving nested VSI: {vsi_file} -> {dest}")
                 shutil.move(str(vsi_file), str(dest))
-            final_path = dest
 
-        # Verify Readability
-        try:
-            with suppress_stderr():
-                slide = slideio.open_slide(str(final_path), "VSI")
-            scene = slide.get_scene(0)
 
-            # Read a small test block from the middle to ensure data integrity
-            w, h = scene.size
-            cx, cy = w // 2, h // 2
-            test_rect = (cx, cy, 256, 256)
+def verify_vsi(vsi_path: Path) -> bool:
+    """Verifies that a VSI file is readable."""
+    try:
+        with suppress_stderr():
+            slide = slideio.open_slide(str(vsi_path), "VSI")
+        scene = slide.get_scene(0)
 
-            # Read slice 0 (or first available)
-            block = scene.read_block(rect=test_rect, size=(256, 256), slices=(0, 1))
+        w, h = scene.size
+        test_rect = (w // 2, h // 2, 256, 256)
+        block = scene.read_block(rect=test_rect, size=(256, 256), slices=(0, 1))
 
-            if block is None or block.size == 0:
-                raise ValueError("Read empty block")
+        return block is not None and block.size > 0
+    except Exception as e:
+        print(f"[FAIL] Integrity check failed for {vsi_path.name}: {e}")
+        return False
 
-            # print(f"[OK] Verified {final_path.name}")
 
-        except Exception as e:
-            print(f"[FAIL] Corrupt VSI detected: {final_path.name}")
-            print(f"       Error: {e}")
+def cleanup_corrupt_vsi(vsi_path: Path, zip_source: Path, extract_target: Path) -> None:
+    """Cleans up corrupted VSI files and their source ZIPs."""
+    vsi_path.unlink(missing_ok=True)
+    print(f"       Deleted corrupt VSI: {vsi_path.name}")
 
-            # 1. Delete VSI File
-            try:
-                final_path.unlink()
-                print(f"       Deleted corrupt file: {final_path.name}")
-            except OSError as del_err:
-                print(f"       Failed to delete VSI: {del_err}")
+    aux_folder_path = extract_target / f"_{vsi_path.stem}_"
+    if aux_folder_path.exists() and aux_folder_path.is_dir():
+        shutil.rmtree(aux_folder_path)
+        print(f"       Deleted aux folder: {aux_folder_path.name}")
 
-            # 2. Delete Aux Folder (_filename_)
-            # Convention: 001.vsi -> _001_
-            aux_folder_name = "_" + final_path.stem + "_"
-            aux_folder_path = extract_target / aux_folder_name
+    zip_path = zip_source / vsi_path.name.replace(".vsi", ".zip")
+    if zip_path.exists():
+        zip_path.unlink()
+        print(f"       Deleted source zip: {zip_path.name}")
 
-            if aux_folder_path.exists() and aux_folder_path.is_dir():
-                try:
-                    shutil.rmtree(str(aux_folder_path))
-                    print(f"       Deleted aux folder: {aux_folder_name}")
-                except OSError as del_err:
-                    print(f"       Failed to delete aux folder: {del_err}")
 
-            # 3. Delete Source Zip (to force re-download)
-            # We need to find the zip that corresponds to this file.
-            # Usually: filename.vsi -> filename.zip
-            zip_name = final_path.name.replace(".vsi", ".zip")
-            zip_path = zip_source / zip_name
+def fix_zip_structure() -> None:
+    """Orchestrates extraction and verification of dataset files."""
+    zip_source = config.VSI_ZIP_DIR
+    extract_target = config.VSI_RAW_DIR
 
-            if zip_path.exists():
-                try:
-                    zip_path.unlink()
-                    print(
-                        f"       Deleted source zip: {zip_name} (forcing re-download)"
-                    )
-                except OSError as del_err:
-                    print(f"       Failed to delete source zip: {del_err}")
+    if not zip_source.exists():
+        print(f"Error: Zip directory {zip_source} does not exist.")
+        return
+
+    extract_target.mkdir(parents=True, exist_ok=True)
+
+    zips = list(zip_source.glob("*.zip"))
+    for zip_path in zips:
+        extract_zip(zip_path, extract_target)
+
+    print("\n--- Organizing and Verifying VSI Files ---")
+    organize_vsi_files(extract_target)
+
+    all_vsis = list(extract_target.glob("*.vsi"))
+    for vsi_file in all_vsis:
+        if not verify_vsi(vsi_file):
+            print(f"[FAIL] Corrupt VSI detected: {vsi_file.name}")
+            cleanup_corrupt_vsi(vsi_file, zip_source, extract_target)
 
     print("Fix/Extraction structure complete.")
 

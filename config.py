@@ -1,37 +1,27 @@
 from pathlib import Path
 from src.models.factory import ModelArch
 
-# Global configuration for VSI processing
-# Changing these values typically requires re-running precompute (src/preprocess.py)
-
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# Patch extraction settings
 PATCH_SIZE = 224
 STRIDE = 224
 
-# Preprocessing settings
-DOWNSCALE_FACTOR = 8  # Reduced to preserve detail
-MIN_TISSUE_COVERAGE = 0.05  # Minimum tissue ratio to keep a patch
+DOWNSCALE_FACTOR = 8
+MIN_TISSUE_COVERAGE = 0.05
 
-# IO Settings
 VIS_DIR = PROJECT_ROOT / "visualizations"
 CACHE_DIR = PROJECT_ROOT / "cache"
-VSI_RAW_DIR = Path("/home/niklas/ZStack_HE/raws")  # Raw downloaded VSI files
-VSI_ZIP_DIR = Path("/home/niklas/ZStack_HE/zips")  # Intermediate ZIP downloads
+VSI_RAW_DIR = Path("/home/niklas/ZStack_HE/raws")
+VSI_ZIP_DIR = Path("/home/niklas/ZStack_HE/zips")
 GENERATE_VISUALIZATIONS = True
 
-# Split Configuration
 SPLIT_FILE = PROJECT_ROOT / "splits.json"
-
-# Splitting Settings
-SPLIT_RATIO = 0.2  # Fraction of data for testing
+SPLIT_RATIO = 0.1
+VAL_RATIO = 0.1
 SEARCH_SEED = 42
 
-# Default output pattern
 INDEX_PREFIX = "dataset_index"
 
-# Training Settings
 BATCH_SIZE = 128
 NUM_WORKERS = 16
 EPOCHS = 50
@@ -42,5 +32,5 @@ MODEL_ARCH = ModelArch.VIT_B_16
 
 
 def get_index_path(mode: str) -> Path:
-    """Returns the absolute path to the index file for a given split mode (train/test)."""
+    """Path to the index file for a given split (train/val/test)."""
     return CACHE_DIR / f"{INDEX_PREFIX}_{mode}.pkl"

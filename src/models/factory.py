@@ -8,7 +8,6 @@ from torchvision.models import (
     MobileNet_V3_Large_Weights,
     ViT_B_16_Weights,
 )
-
 from enum import Enum
 
 
@@ -22,16 +21,7 @@ class ModelArch(str, Enum):
 
 
 def get_model(arch_name: ModelArch):
-    """
-    Returns a configured model for regression (1 output).
-    Supported architectures:
-    - convnext_tiny
-    - resnet18
-    - resnet50
-    - efficientnet_b0
-    - mobilenet_v3_large
-    - vit_b_16
-    """
+    """Returns a configured model for regression (1 output)."""
     print(f"Loading Model Architecture: {arch_name.value}...")
 
     match arch_name:
@@ -68,13 +58,10 @@ def get_model(arch_name: ModelArch):
 
         case ModelArch.VIT_B_16:
             model = models.vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1)
-
             num_features = model.heads.head.in_features
             model.heads.head = nn.Linear(num_features, 1)
 
         case _:
-            raise ValueError(
-                f"Unknown architecture: {arch_name}. Supported: {[m.value for m in ModelArch]}"
-            )
+            raise ValueError(f"Unknown architecture: {arch_name}")
 
     return model
