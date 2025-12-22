@@ -11,11 +11,24 @@ MIN_TISSUE_COVERAGE = 0.05
 
 VIS_DIR = PROJECT_ROOT / "visualizations"
 CACHE_DIR = PROJECT_ROOT / "cache"
-VSI_RAW_DIR = Path("/home/niklas/ZStack_HE/raws")
-VSI_ZIP_DIR = Path("/home/niklas/ZStack_HE/zips")
+DATASET_NAME = "ZStack_HE"
+
+
+def get_vsi_raw_dir(dataset_name: str = DATASET_NAME) -> Path:
+    return Path(f"/home/niklas/{dataset_name}/raws")
+
+
+def get_vsi_zip_dir(dataset_name: str = DATASET_NAME) -> Path:
+    return Path(f"/home/niklas/{dataset_name}/zips")
+
+
 GENERATE_VISUALIZATIONS = True
 
-SPLIT_FILE = PROJECT_ROOT / "splits.json"
+
+def get_split_path(dataset_name: str = DATASET_NAME) -> Path:
+    return PROJECT_ROOT / f"splits_{dataset_name}.json"
+
+
 SPLIT_RATIO = 0.1
 VAL_RATIO = 0.1
 SEARCH_SEED = 42
@@ -31,6 +44,6 @@ CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints"
 MODEL_ARCH = ModelArch.VIT_B_16
 
 
-def get_index_path(mode: str) -> Path:
-    """Path to the index file for a given split (train/val/test)."""
-    return CACHE_DIR / f"{INDEX_PREFIX}_{mode}.pkl"
+def get_index_path(mode: str, dataset_name: str = DATASET_NAME) -> Path:
+    """Path to the index file for a given split (train/val/test) and dataset."""
+    return CACHE_DIR / f"{INDEX_PREFIX}_{dataset_name}_{mode}.pkl"

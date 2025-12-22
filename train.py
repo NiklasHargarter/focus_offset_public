@@ -1,5 +1,6 @@
 import torch
 import warnings
+import argparse
 
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
@@ -16,11 +17,20 @@ torch.set_float32_matmul_precision("medium")
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Train regressor.")
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default=config.DATASET_NAME,
+        help="Name of the dataset to train on.",
+    )
+    args = parser.parse_args()
+
     L.seed_everything(42)
     device_str = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device strategy: {device_str}")
 
-    datamodule = VSIDataModule()
+    datamodule = VSIDataModule(dataset_name=args.dataset)
 
     model = FocusOffsetRegressor(
         arch_name=config.MODEL_ARCH, learning_rate=config.LEARNING_RATE

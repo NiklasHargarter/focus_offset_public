@@ -1,4 +1,5 @@
 import os
+import argparse
 import config
 from exact_sync.v1.configuration import Configuration
 from exact_sync.v1.api_client import ApiClient
@@ -6,12 +7,12 @@ from exact_sync.v1.api.images_api import ImagesApi
 from src.utils.exact_utils import get_exact_image_list
 
 
-def download_dataset() -> None:
-    """Downloads all missing images from the EXACT dataset."""
-    print("Fetching full image list from EXACT...")
-    all_images = get_exact_image_list()
+def download_dataset(dataset_name: str = config.DATASET_NAME) -> None:
+    """Download missing VSI zips from EXACT."""
+    print(f"Fetching full image list for {dataset_name} from EXACT...")
+    all_images = get_exact_image_list(dataset_name=dataset_name)
 
-    download_target = config.VSI_ZIP_DIR
+    download_target = config.get_vsi_zip_dir(dataset_name)
     download_target.mkdir(parents=True, exist_ok=True)
 
     print(f"Total images in dataset: {len(all_images)}")
@@ -27,7 +28,7 @@ def download_dataset() -> None:
     client = ApiClient(configuration)
     images_api = ImagesApi(client)
 
-    print(f"Starting download check for {len(all_images)} images...")
+    print(f"Starting download check for {len(all_images)} images in {dataset_name}...")
 
     for img_info in all_images:
         image_id = img_info["id"]
@@ -45,8 +46,11 @@ def download_dataset() -> None:
         else:
             print(f"Skipping {target_name} (already exists).")
 
-    print("Download process complete.")
+    print(f"Download process for {dataset_name} complete.")
 
 
 if __name__ == "__main__":
-    download_dataset()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
+    args = parser.parse_args()
+    download_dataset(dataset_name=args.dataset)

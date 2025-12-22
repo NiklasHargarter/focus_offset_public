@@ -1,4 +1,5 @@
 import zipfile
+import argparse
 import shutil
 from pathlib import Path
 import config
@@ -7,7 +8,7 @@ import slideio
 
 
 def extract_zip(zip_path: Path, extract_target: Path) -> bool:
-    """Extracts a zip file if the VSI is not already present."""
+    """Extract zip file if VSI is missing."""
     expected_vsi_name = zip_path.name.replace(".zip", ".vsi")
     expected_vsi_path = extract_target / expected_vsi_name
 
@@ -21,7 +22,7 @@ def extract_zip(zip_path: Path, extract_target: Path) -> bool:
 
 
 def organize_vsi_files(extract_target: Path) -> None:
-    """Moves nested VSIs to the base directory."""
+    """Move nested VSI files to root directory."""
     all_vsis = list(extract_target.rglob("*.vsi"))
     for vsi_file in all_vsis:
         if vsi_file.parent != extract_target:
@@ -32,7 +33,7 @@ def organize_vsi_files(extract_target: Path) -> None:
 
 
 def verify_vsi(vsi_path: Path) -> bool:
-    """Verifies that a VSI file is readable."""
+    """Verify VSI file readability."""
     try:
         with suppress_stderr():
             slide = slideio.open_slide(str(vsi_path), "VSI")
@@ -49,7 +50,7 @@ def verify_vsi(vsi_path: Path) -> bool:
 
 
 def cleanup_corrupt_vsi(vsi_path: Path, zip_source: Path, extract_target: Path) -> None:
-    """Cleans up corrupted VSI files and their source ZIPs."""
+    """Delete corrupt VSI files and source ZIPs."""
     vsi_path.unlink(missing_ok=True)
     print(f"       Deleted corrupt VSI: {vsi_path.name}")
 
@@ -64,13 +65,13 @@ def cleanup_corrupt_vsi(vsi_path: Path, zip_source: Path, extract_target: Path) 
         print(f"       Deleted source zip: {zip_path.name}")
 
 
-def fix_zip_structure() -> None:
-    """Orchestrates extraction and verification of dataset files."""
-    zip_source = config.VSI_ZIP_DIR
-    extract_target = config.VSI_RAW_DIR
+def fix_zip_structure(dataset_name: str = config.DATASET_NAME) -> None:
+    """Extract and verify all dataset files."""
+    zip_source = config.get_vsi_zip_dir(dataset_name)
+    extract_target = config.get_vsi_raw_dir(dataset_name)
 
     if not zip_source.exists():
-        print(f"Error: Zip directory {zip_source} does not exist.")
+        print(f"Error: Zip directory {zip_source} does not exist for {dataset_name}.")
         return
 
     extract_target.mkdir(parents=True, exist_ok=True)
@@ -79,7 +80,7 @@ def fix_zip_structure() -> None:
     for zip_path in zips:
         extract_zip(zip_path, extract_target)
 
-    print("\n--- Organizing and Verifying VSI Files ---")
+    print(f"\n--- Organizing and Verifying VSI Files for {dataset_name} ---")
     organize_vsi_files(extract_target)
 
     all_vsis = list(extract_target.glob("*.vsi"))
@@ -88,8 +89,11 @@ def fix_zip_structure() -> None:
             print(f"[FAIL] Corrupt VSI detected: {vsi_file.name}")
             cleanup_corrupt_vsi(vsi_file, zip_source, extract_target)
 
-    print("Fix/Extraction structure complete.")
+    print(f"Fix/Extraction structure for {dataset_name} complete.")
 
 
 if __name__ == "__main__":
-    fix_zip_structure()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
+    args = parser.parse_args()
+    fix_zip_structure(dataset_name=args.dataset)

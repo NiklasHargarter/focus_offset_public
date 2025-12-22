@@ -30,5 +30,14 @@
         "timestamp": "2025-12-18T16:41:57.543417",
         "checkpoint_path": "checkpoints/vit_b_16/best_model.ckpt",
         "checkpoint_sha256": "c4b7e2c452c69240124b263ee607728f8af6ecc7e04355ed9242d1677f052005"
+    },
+    {
+        "architecture": "vit_b_16",
+        "dataset": "ZStack_IHC",
+        "mae": 2.032449233962705,
+        "std": 2.3625680301197125,
+        "timestamp": "2025-12-22T21:23:33.894564",
+        "checkpoint_path": "checkpoints/vit_b_16/best_model.ckpt",
+        "checkpoint_sha256": "c4b7e2c452c69240124b263ee607728f8af6ecc7e04355ed9242d1677f052005"
     }
 ]

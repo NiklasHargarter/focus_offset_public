@@ -17,11 +17,13 @@ class VSIDataset(Dataset):
     def __init__(
         self,
         mode: str,
+        dataset_name: str = config.DATASET_NAME,
         transform: Optional[Callable[[Any], torch.Tensor]] = None,
     ):
         self.mode = mode
+        self.dataset_name = dataset_name
         self.transform = transform
-        self.index_path = config.get_index_path(mode)
+        self.index_path = config.get_index_path(mode, dataset_name=dataset_name)
 
         if not self.index_path.exists():
             raise FileNotFoundError(

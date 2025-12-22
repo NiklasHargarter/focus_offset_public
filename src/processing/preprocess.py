@@ -1,4 +1,5 @@
 import os
+import argparse
 import json
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from src.utils.io_utils import suppress_stderr
 
 
 def compute_brenner_gradient(image: np.ndarray) -> int:
-    """Compute Brenner Gradient focus measure."""
+    """Compute Brenner Gradient focus score."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.int32)
     shifted = np.roll(gray, -2, axis=1)
     return int(np.sum((gray - shifted) ** 2))
@@ -24,7 +25,7 @@ def compute_brenner_gradient(image: np.ndarray) -> int:
 def select_best_focus_slice(
     scene: Any, width: int, height: int, num_z: int, down_w: int, down_h: int
 ) -> np.ndarray:
-    """Finds the global best focus slice across all Z-levels."""
+    """Find best focus slice across Z-levels."""
     best_focus_score = -1
     best_img = None
 
@@ -46,7 +47,7 @@ def select_best_focus_slice(
 
 
 def generate_tissue_mask(image_gray: np.ndarray) -> np.ndarray:
-    """Generates a binary tissue mask."""
+    """Generate binary tissue mask."""
     thresh = threshold_otsu(image_gray)
     return ((image_gray <= thresh) * 255).astype(np.uint8)
 
@@ -61,7 +62,7 @@ def find_valid_patches(
     down_w: int,
     down_h: int,
 ) -> list[tuple[int, int]]:
-    """Identifies valid patches with sufficient tissue coverage."""
+    """Find patches with sufficient tissue coverage."""
     valid_patches = []
     min_tissue_coverage = config.MIN_TISSUE_COVERAGE
 
@@ -101,7 +102,7 @@ def resolve_patch_z_levels(
     patch_size: int,
     downscale_factor: int,
 ) -> list[tuple[int, int, int]]:
-    """Determines the locally optimal Z-level for each patch."""
+    """Determine optimal Z-level for each patch."""
     num_patches = len(valid_patches)
     if num_patches == 0:
         return []
@@ -225,28 +226,35 @@ def process_slide(
     }
 
 
-def resolve_file_list(split_files: list[str]) -> list[Path]:
+def resolve_file_list(
+    split_files: list[str], dataset_name: str = config.DATASET_NAME
+) -> list[Path]:
     valid_files = []
     missing_files = []
 
+    raw_dir = config.get_vsi_raw_dir(dataset_name)
     for filename in split_files:
-        path = config.VSI_RAW_DIR / filename
+        path = raw_dir / filename
         if path.exists():
             valid_files.append(path)
         else:
             missing_files.append(path)
 
     if missing_files:
-        print(f"Warning: {len(missing_files)} files from split not found on disk.")
+        print(
+            f"Warning: {len(missing_files)} files from split not found on disk for {dataset_name}."
+        )
     return sorted(valid_files)
 
 
-def get_config_state() -> dict[str, Any]:
+def get_config_state(dataset_name: str = config.DATASET_NAME) -> dict[str, Any]:
     import hashlib
 
+    split_file = config.get_split_path(dataset_name)
+
     split_hash = "none"
-    if config.SPLIT_FILE.exists():
-        with open(config.SPLIT_FILE, "rb") as f:
+    if split_file.exists():
+        with open(split_file, "rb") as f:
             split_hash = hashlib.sha256(f.read()).hexdigest()
 
     return {
@@ -255,10 +263,12 @@ def get_config_state() -> dict[str, Any]:
         "DOWNSCALE_FACTOR": config.DOWNSCALE_FACTOR,
         "MIN_TISSUE_COVERAGE": config.MIN_TISSUE_COVERAGE,
         "SPLIT_HASH": split_hash,
+        "DATASET_NAME": dataset_name,
     }
 
 
 def preprocess_dataset(
+    dataset_name: str = config.DATASET_NAME,
     patch_size: int = config.PATCH_SIZE,
     stride: int = config.STRIDE,
     workers: int | None = None,
@@ -269,15 +279,17 @@ def preprocess_dataset(
     if workers is None:
         workers = os.cpu_count()
 
-    if not config.SPLIT_FILE.exists():
-        print(f"Error: Split file {config.SPLIT_FILE} not found.")
+    split_file = config.get_split_path(dataset_name)
+
+    if not split_file.exists():
+        print(f"Error: Split file {split_file} not found.")
         return
 
-    print(f"Loading splits from {config.SPLIT_FILE}...")
-    with open(config.SPLIT_FILE, "r") as f:
+    print(f"Loading splits from {split_file} for {dataset_name}...")
+    with open(split_file, "r") as f:
         splits = json.load(f)
 
-    current_config = get_config_state()
+    current_config = get_config_state(dataset_name=dataset_name)
 
     for split_name, split_files in splits.items():
         if split_name in ["seed", "total"]:
@@ -285,7 +297,7 @@ def preprocess_dataset(
         if mode and split_name != mode:
             continue
 
-        output_path = config.CACHE_DIR / f"{config.INDEX_PREFIX}_{split_name}.pkl"
+        output_path = config.get_index_path(split_name, dataset_name=dataset_name)
 
         should_generate = force
         if not output_path.exists():
@@ -295,10 +307,14 @@ def preprocess_dataset(
                 with open(output_path, "rb") as f:
                     existing_data = pickle.load(f)
                 if existing_data.get("config_state", {}) == current_config:
-                    print(f"Index for {split_name} exists and matches. Skipping.")
+                    print(
+                        f"Index for {dataset_name}/{split_name} exists and matches. Skipping."
+                    )
                     should_generate = False
                 else:
-                    print(f"Index for {split_name} mismatch. Regenerating.")
+                    print(
+                        f"Index for {dataset_name}/{split_name} mismatch. Regenerating."
+                    )
                     should_generate = True
             except Exception:
                 should_generate = True
@@ -306,8 +322,10 @@ def preprocess_dataset(
         if not should_generate:
             continue
 
-        print(f"\n=== Generating Index for Split: {split_name.upper()} ===")
-        files = resolve_file_list(split_files)
+        print(
+            f"\n=== Generating Index for {dataset_name} Split: {split_name.upper()} ==="
+        )
+        files = resolve_file_list(split_files, dataset_name=dataset_name)
         if not files:
             continue
 
@@ -337,8 +355,14 @@ def preprocess_dataset(
         with open(output_path, "wb") as f:
             pickle.dump(final_index, f)
 
-        print(f"Saved {split_name} index to {output_path} ({cumulative_count} samples)")
+        print(
+            f"Saved {dataset_name}/{split_name} index to {output_path} ({cumulative_count} samples)"
+        )
 
 
 if __name__ == "__main__":
-    preprocess_dataset()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
+    parser.add_argument("--force", action="store_true")
+    args = parser.parse_args()
+    preprocess_dataset(dataset_name=args.dataset, force=args.force)
