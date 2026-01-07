@@ -40,7 +40,7 @@ def download_dataset(dataset_name: str = config.DATASET_NAME) -> None:
         if not file_path.exists():
             print(f"Downloading {original_name} -> {target_name}...")
             try:
-                images_api.download_image(id=image_id, target_path=file_path)
+                images_api.download_image(id=image_id, target_path=str(file_path))
             except Exception as e:
                 print(f"Failed to download {original_name}: {e}")
         else:

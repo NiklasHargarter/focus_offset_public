@@ -39,5 +39,23 @@
         "timestamp": "2025-12-22T21:23:33.894564",
         "checkpoint_path": "checkpoints/vit_b_16/best_model.ckpt",
         "checkpoint_sha256": "c4b7e2c452c69240124b263ee607728f8af6ecc7e04355ed9242d1677f052005"
+    },
+    {
+        "architecture": "vit_b_16",
+        "dataset": "ZStack_HE",
+        "mae": 0.3012124055652636,
+        "std": 0.30296648284820465,
+        "timestamp": "2025-12-23T21:23:14.672006",
+        "checkpoint_path": "checkpoints/vit_b_16/best_model.ckpt",
+        "checkpoint_sha256": "c4b7e2c452c69240124b263ee607728f8af6ecc7e04355ed9242d1677f052005"
+    },
+    {
+        "architecture": "vit_b_16",
+        "dataset": "Jiang2018",
+        "mae": 5.018905352063212,
+        "std": 3.228674867050674,
+        "timestamp": "2026-01-07T12:03:19.174592",
+        "checkpoint_path": "checkpoints/vit_b_16/best_model.ckpt",
+        "checkpoint_sha256": "c4b7e2c452c69240124b263ee607728f8af6ecc7e04355ed9242d1677f052005"
     }
 ]

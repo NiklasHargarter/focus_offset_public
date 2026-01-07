@@ -10,6 +10,7 @@ import lightning as L
 
 import config
 from src.dataset.vsi_datamodule import VSIDataModule
+from src.dataset.jiang2018 import Jiang2018DataModule
 from src.models.lightning_module import FocusOffsetRegressor
 from src.models.factory import ModelArch
 
@@ -107,7 +108,10 @@ def evaluate(dataset_names: list[str]) -> None:
             continue
 
         print(f"\n=== Evaluating Dataset: {ds_name} ===")
-        datamodule = VSIDataModule(dataset_name=ds_name)
+        if ds_name == "Jiang2018":
+            datamodule = Jiang2018DataModule()
+        else:
+            datamodule = VSIDataModule(dataset_name=ds_name)
 
         print(f"Loading Model: {config.MODEL_ARCH} for evaluation on {ds_name}...")
         with torch.serialization.safe_globals([ModelArch]):
@@ -136,6 +140,8 @@ def evaluate(dataset_names: list[str]) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--datasets", nargs="+", default=[config.DATASET_NAME])
+    parser.add_argument(
+        "--datasets", nargs="+", default=["ZStack_HE", "ZStack_IHC", "Jiang2018"]
+    )
     args = parser.parse_args()
     evaluate(dataset_names=args.datasets)
