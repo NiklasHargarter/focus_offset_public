@@ -16,6 +16,7 @@ data_train/
 checkpoints/
 cache/
 visualizations/
+logs/
 
 # System
 .DS_Store

@@ -1,17 +1,16 @@
 import time
 import torch
-from torch.utils.data import DataLoader
 import lightning as L
 import sys
 from pathlib import Path
 
 # Add project root to path for imports
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.append(str(PROJECT_ROOT))
 
-import config
-from src.dataset.vsi_dataset import VSIDataset
-from src.models.lightning_module import FocusOffsetRegressor
-from src.models.factory import ModelArch
+from src.dataset.vsi_datamodule import VSIDataModule  # noqa: E402
+from src.models.lightning_module import FocusOffsetRegressor  # noqa: E402
+from src.models.architectures import ResNetFocusRegressor, ViTFocusRegressor, ConvNeXtFocusRegressor, EfficientNetFocusRegressor  # noqa: E402
 
 # Enable Tensor Cores globally if not handled by Trainer
 torch.set_float32_matmul_precision("medium")
@@ -48,13 +47,28 @@ class BenchmarkCallback(L.Callback):
         return (measured_batches * batch_size) / duration
 
 
-def benchmark_architecture(arch: ModelArch, train_loader, val_loader):
-    print(f"\nBenchmarking architecture: {arch.value}")
+def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_size):
+    print(f"\nBenchmarking architecture: {arch_name}")
 
-    model = FocusOffsetRegressor(arch_name=arch, learning_rate=config.LEARNING_RATE)
+    # Instantiate the specific model subclass
+    if arch_name == "resnet18":
+        backbone = ResNetFocusRegressor(version="resnet18")
+    elif arch_name == "resnet50":
+        backbone = ResNetFocusRegressor(version="resnet50")
+    elif arch_name == "vit_b_16":
+        backbone = ViTFocusRegressor(version="vit_b_16")
+    elif arch_name == "convnext_tiny":
+        backbone = ConvNeXtFocusRegressor(version="tiny")
+    elif arch_name == "efficientnet_b0":
+        backbone = EfficientNetFocusRegressor(version="b0")
+    else:
+        print(f"Unknown architecture {arch_name}, skipping.")
+        return None
 
-    WARMUP_STEPS = 100
-    MEASURE_STEPS = 500
+    model = FocusOffsetRegressor(backbone=backbone)
+
+    WARMUP_STEPS = 50
+    MEASURE_STEPS = 100
     TOTAL_STEPS = WARMUP_STEPS + MEASURE_STEPS
 
     benchmark_callback = BenchmarkCallback(
@@ -66,8 +80,8 @@ def benchmark_architecture(arch: ModelArch, train_loader, val_loader):
         limit_train_batches=TOTAL_STEPS,
         limit_val_batches=0,
         accelerator="auto",
-        devices="auto",
-        precision="bf16-mixed",
+        devices=1,
+        precision="16-mixed",
         logger=False,
         enable_checkpointing=False,
         enable_progress_bar=False,
@@ -79,12 +93,11 @@ def benchmark_architecture(arch: ModelArch, train_loader, val_loader):
 
     benchmark_trainer.fit(model, train_loader)
 
-    throughput = benchmark_callback.get_throughput(config.BATCH_SIZE)
+    throughput = benchmark_callback.get_throughput(batch_size)
     total_time = benchmark_callback.end_time - benchmark_callback.start_time
 
     # Estimate full epoch time
-    dataset_size = len(train_loader.dataset)
-    steps_per_epoch = dataset_size / config.BATCH_SIZE
+    steps_per_epoch = dataset_size / batch_size
     # Time per batch
     time_per_batch = total_time / MEASURE_STEPS
     epoch_time_seconds = steps_per_epoch * time_per_batch
@@ -95,7 +108,7 @@ def benchmark_architecture(arch: ModelArch, train_loader, val_loader):
     print(f"  Est. Epoch Time: {epoch_time_min:.2f} min")
 
     return {
-        "arch": arch.value,
+        "arch": arch_name,
         "throughput": throughput,
         "epoch_time_min": epoch_time_min,
     }
@@ -104,36 +117,34 @@ def benchmark_architecture(arch: ModelArch, train_loader, val_loader):
 def main():
     L.seed_everything(42)
 
-    # Load Dataset Once
-    index_path = config.get_index_path("train")
-    if not index_path.exists():
-        print("Train index not found. Run preprocess first.")
+    print("Initializing DataModule...")
+    datamodule = VSIDataModule(dataset_name="ZStack_HE", batch_size=128, num_workers=16)
+    datamodule.setup(stage="fit")
+
+    if datamodule.train_dataset is None:
+        print("Train dataset not found. Ensure preprocessing is complete.")
         return
 
-    print("Loading dataset...")
-    full_dataset = VSIDataset(mode="train")
-
-    train_loader = DataLoader(
-        full_dataset,
-        batch_size=config.BATCH_SIZE,
-        shuffle=True,
-        num_workers=config.NUM_WORKERS,
-        persistent_workers=True,
-        pin_memory=True,
-    )
-
-    val_loader = DataLoader(full_dataset, batch_size=config.BATCH_SIZE)
+    train_loader = datamodule.train_dataloader()
+    dataset_size = len(datamodule.train_dataset)
+    batch_size = datamodule.batch_size
 
     results = []
 
-    for arch in ModelArch:
-        try:
-            res = benchmark_architecture(arch, train_loader, val_loader)
-            results.append(res)
-        except Exception as e:
-            print(f"Skipping {arch.value} due to error: {e}")
+    # Benchmark a curated list of architectures
+    arch_list = ["resnet18", "resnet50", "vit_b_16", "convnext_tiny", "efficientnet_b0"]
 
-    print("\n\n=== LIGHTNING BENCHMARK SUMMARY (BF16) ===")
+    for arch_name in arch_list:
+        try:
+            res = benchmark_architecture(arch_name, train_loader, dataset_size, batch_size)
+            if res:
+                results.append(res)
+        except Exception as e:
+            print(f"Skipping {arch_name} due to error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    print("\n\n=== LIGHTNING BENCHMARK SUMMARY (AMP 16) ===")
     print(
         f"{'Architecture':<25} | {'Throughput (img/s)':<20} | {'Est. Epoch Time (min)':<25}"
     )
@@ -146,3 +157,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

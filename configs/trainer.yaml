@@ -1,0 +1,31 @@
+trainer:
+  max_epochs: 100
+  precision: 16-mixed
+  devices: 1
+  accelerator: auto
+  deterministic: false
+  profiler: simple
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val_loss
+        mode: min
+        save_top_k: 1
+        filename: 'best_model-{epoch:02d}-{val_loss:.4f}'
+    - class_path: lightning.pytorch.callbacks.EarlyStopping
+      init_args:
+        monitor: val_loss
+        patience: 10
+        mode: min
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: step
+  logger:
+    - class_path: lightning.pytorch.loggers.TensorBoardLogger
+      init_args:
+        save_dir: logs
+        name: focus_offset
+    - class_path: lightning.pytorch.loggers.CSVLogger
+      init_args:
+        save_dir: logs
+        name: focus_offset

@@ -3,8 +3,8 @@ from torch.utils.data import DataLoader
 import torch
 import pickle
 from typing import Optional
+from pathlib import Path
 
-import config
 from src.dataset.vsi_dataset_lightning import VSIDatasetLightning
 from src.processing.download import download_dataset
 from src.processing.fix_zip import fix_zip_structure
@@ -15,18 +15,31 @@ from src.processing.preprocess import preprocess_dataset
 class VSIDataModule(L.LightningDataModule):
     """
     Handles preparation, loading indices, and managing splits for a single dataset.
+    Compliant with LightningCLI by avoiding global config imports.
     """
 
     def __init__(
         self,
-        dataset_name: str = config.DATASET_NAME,
-        batch_size: int = config.BATCH_SIZE,
-        num_workers: int = config.NUM_WORKERS,
+        dataset_name: str,
+        batch_size: int = 128,
+        num_workers: int = 16,
+        patch_size: int = 224,
+        stride: int = 224,
+        downscale_factor: int = 8,
+        min_tissue_coverage: float = 0.05,
+        cache_dir: str = "cache",
+        index_prefix: str = "dataset_index",
     ):
         super().__init__()
         self.dataset_name = dataset_name
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.patch_size = patch_size
+        self.stride = stride
+        self.downscale_factor = downscale_factor
+        self.min_tissue_coverage = min_tissue_coverage
+        self.cache_dir = Path(cache_dir)
+        self.index_prefix = index_prefix
 
         self.train_dataset: Optional[torch.utils.data.Dataset] = None
         self.val_dataset: Optional[torch.utils.data.Dataset] = None
@@ -36,16 +49,28 @@ class VSIDataModule(L.LightningDataModule):
         """Preparation logic (download, unzip, split, preprocess) for the dataset."""
         print(f"Ensuring data environment for {self.dataset_name} is ready...")
 
-        # Always prepare specified dataset
+        # We pass the preprocessing parameters to create_split and preprocess_dataset.
+        # This allows the YAML to control the data indexing process.
         create_split(dataset_name=self.dataset_name)
         download_dataset(dataset_name=self.dataset_name)
         fix_zip_structure(dataset_name=self.dataset_name)
-        preprocess_dataset(dataset_name=self.dataset_name)
+        
+        preprocess_dataset(
+            dataset_name=self.dataset_name,
+            patch_size=self.patch_size,
+            stride=self.stride,
+            downscale_factor=self.downscale_factor,
+            min_tissue_coverage=self.min_tissue_coverage,
+        )
 
         print(f"\nData preparation for {self.dataset_name} complete.")
 
+    def _get_index_path(self, mode: str) -> Path:
+        """Path to the index file for a given split (train/val/test) and dataset."""
+        return self.cache_dir / f"{self.index_prefix}_{self.dataset_name}_{mode}.pkl"
+
     def _load_index(self, mode: str) -> Optional[dict]:
-        path = config.get_index_path(mode, dataset_name=self.dataset_name)
+        path = self._get_index_path(mode)
         if not path.exists():
             return None
         with open(path, "rb") as f:
@@ -128,3 +153,4 @@ class VSIDataModule(L.LightningDataModule):
 
     def predict_dataloader(self):
         return self.test_dataloader()
+

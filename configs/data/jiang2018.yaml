@@ -1,0 +1,5 @@
+data:
+  class_path: src.dataset.jiang2018.Jiang2018DataModule
+  init_args:
+    batch_size: 128
+    num_workers: 4

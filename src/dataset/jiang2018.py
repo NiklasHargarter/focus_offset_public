@@ -117,8 +117,8 @@ class Jiang2018DataModule(L.LightningDataModule):
 
     def __init__(
         self,
-        batch_size: int = config.BATCH_SIZE,
-        num_workers: int = config.NUM_WORKERS,
+        batch_size: int = 128,
+        num_workers: int = 4,
         force_recompute: bool = False,
     ):
         super().__init__()
@@ -161,9 +161,10 @@ class Jiang2018DataModule(L.LightningDataModule):
                 print(f"Failed to unzip {zip_path.name}: {e}")
 
     def setup(self, stage: Optional[str] = None):
-        self.test_ds = Jiang2018Dataset(
-            self.raw_dir, force_recompute=self.force_recompute
-        )
+        if self.test_ds is None:
+            self.test_ds = Jiang2018Dataset(
+                self.raw_dir, force_recompute=self.force_recompute
+            )
 
     def test_dataloader(self):
         return DataLoader(
@@ -171,7 +172,9 @@ class Jiang2018DataModule(L.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             shuffle=False,
+            pin_memory=torch.cuda.is_available()
         )
 
     def predict_dataloader(self):
         return self.test_dataloader()
+

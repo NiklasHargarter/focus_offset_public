@@ -4,13 +4,13 @@ from pathlib import Path
 import os
 
 # Add project root to path for imports
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-from torch.utils.data import DataLoader
-import config
-from src.dataset.vsi_dataset import VSIDataset
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.append(str(PROJECT_ROOT))
+
+from src.dataset.vsi_datamodule import VSIDataModule  # noqa: E402
 
 
-def measure_throughput(loader, steps=50, warmup=10):
+def measure_throughput(loader, batch_size, steps=50, warmup=10):
     iter_loader = iter(loader)
 
     # Warmup
@@ -24,24 +24,19 @@ def measure_throughput(loader, steps=50, warmup=10):
     end_time = time.time()
     duration = end_time - start_time
 
-    items_per_sec = (steps * loader.batch_size) / duration
+    items_per_sec = (steps * batch_size) / duration
     return items_per_sec
 
 
 def main():
-    print("--- VSI Loader Scaling Benchmark ---")
-
-    if not config.get_index_path("train").exists():
-        print("Index not found. Run preprocess first.")
-        return
+    print("--- VSI Loader Scaling Benchmark (DataModule Version) ---")
 
     cpu_count = os.cpu_count() or 8
     # Define search grid
     worker_options = sorted(list(set([8, 16, cpu_count])))
-    # Limit workers to reasonable max (e.g. cpu_count * 1.5 rounded or just static list)
     worker_options = [w for w in worker_options if w <= cpu_count + 4]
 
-    batch_size_options = [16, 32, 64, 128, 256]
+    batch_size_options = [64, 128, 256]
 
     print(f"Testing Workers: {worker_options}")
     print(f"Testing Batch Sizes: {batch_size_options}")
@@ -62,24 +57,18 @@ def main():
                 # Run 3 trials
                 trial_speeds = []
                 for i in range(3):
-                    # Re-initialize dataset for each run to avoid side-effects
-                    ds = VSIDataset(mode="train")
-
-                    # persistent_workers must be False if num_workers is 0
-                    use_persistent = num_workers > 0
-
-                    loader = DataLoader(
-                        ds,
+                    # Use the DataModule for each trial
+                    datamodule = VSIDataModule(
+                        dataset_name="ZStack_HE",
                         batch_size=batch_size,
-                        num_workers=num_workers,
-                        shuffle=True,
-                        persistent_workers=use_persistent,
-                        pin_memory=True,
+                        num_workers=num_workers
                     )
-
-                    # Using fewer steps for larger batches to save time, or keep constant?
-                    # throughput measurement should be robust. Let's keep 50 steps.
-                    speed = measure_throughput(loader, steps=50, warmup=20)
+                    datamodule.setup(stage="fit")
+                    
+                    loader = datamodule.train_dataloader()
+                    
+                    # Throughput measurement
+                    speed = measure_throughput(loader, batch_size=batch_size, steps=40, warmup=10)
                     trial_speeds.append(speed)
 
                 avg_speed = sum(trial_speeds) / len(trial_speeds)

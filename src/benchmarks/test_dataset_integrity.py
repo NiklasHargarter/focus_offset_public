@@ -1,62 +1,46 @@
 import time
-import os
 import sys
 from pathlib import Path
-from torch.utils.data import DataLoader
 
 # Add project root to sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.dataset.vsi_dataset import VSIDataset  # noqa: E402
-import config  # noqa: E402
+from src.dataset.vsi_datamodule import VSIDataModule  # noqa: E402
 
 
 def main():
-    workers = os.cpu_count()
-    batch_size = config.BATCH_SIZE
-    persistent = True
-    pin_memory = True
-    prefetch = 4
-
-    # Check for index existence (optional visual check, dataset handles it too)
-    if not config.get_index_path("train").exists():
-        print("Index not found. Run preprocess.py first.")
+    print("Initializing DataModule...")
+    # Use default params from VSIDataModule or specify them here
+    datamodule = VSIDataModule(dataset_name="ZStack_HE")
+    
+    print("Setting up dataset...")
+    datamodule.setup(stage="fit")
+    
+    loader = datamodule.train_dataloader()
+    
+    if datamodule.train_dataset is None:
+        print("Train dataset not found. Ensure preprocessing is complete.")
         return
+        
+    print(f"Dataset size: {len(datamodule.train_dataset)} samples (flattened Z)")
+    print(f"DataLoader config: workers={datamodule.num_workers}, batch_size={datamodule.batch_size}")
 
-    print("Loading dataset...")
-    dataset = VSIDataset(mode="train")
-    print(f"Dataset size: {len(dataset)} samples (flattened Z)")
-
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        num_workers=workers,
-        shuffle=True,
-        persistent_workers=persistent,
-        pin_memory=pin_memory,
-        prefetch_factor=prefetch if workers > 0 else None,
-    )
-
-    print(
-        f"Starting DataLoader test: Workers={workers}, Persistent={persistent}, Pin={pin_memory}, Prefetch={prefetch}"
-    )
     start = time.time()
-
-    max_steps = 200  # Increased steps for stable measurement
+    max_steps = 100
+    
+    print(f"Starting integrity test for {max_steps} batches...")
+    
     for i, batch in enumerate(loader):
         if i >= max_steps:
             break
         if i % 20 == 0:
-            if isinstance(batch, (list, tuple)):
-                imgs, targets = batch
-                print(f"Batch {i}/{max_steps} - Img: {imgs.shape}")
-            else:
-                pass
+            imgs, targets = batch
+            print(f"Batch {i}/{max_steps} - Img: {imgs.shape}, Targets: {targets.shape}")
 
     end = time.time()
     duration = end - start
-    total_items = max_steps * batch_size
+    total_items = (i + 1) * datamodule.batch_size
     rate = total_items / duration
 
     print(f"\nProcessed {total_items} items in {duration:.2f}s")
@@ -65,3 +49,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

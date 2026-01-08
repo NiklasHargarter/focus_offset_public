@@ -1,13 +1,8 @@
 import torch
 import warnings
-import argparse
-
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
-from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.cli import LightningCLI
 
-import config
-from src.dataset.vsi_datamodule import VSIDataModule
 from src.models.lightning_module import FocusOffsetRegressor
 
 warnings.filterwarnings(
@@ -16,59 +11,17 @@ warnings.filterwarnings(
 torch.set_float32_matmul_precision("medium")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Train regressor.")
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        default=config.DATASET_NAME,
-        help="Name of the dataset to train on.",
+def cli_main():
+    LightningCLI(
+        model_class=FocusOffsetRegressor,
+        datamodule_class=L.LightningDataModule,
+        subclass_mode_data=True,
+        seed_everything_default=42,
+        save_config_callback=None,  # Config will be saved with checkpoints automatically
+        run=True,
     )
-    args = parser.parse_args()
-
-    L.seed_everything(42)
-    device_str = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device strategy: {device_str}")
-
-    datamodule = VSIDataModule(dataset_name=args.dataset)
-
-    model = FocusOffsetRegressor(
-        arch_name=config.MODEL_ARCH, learning_rate=config.LEARNING_RATE
-    )
-
-    checkpoint_dir = config.CHECKPOINT_DIR / config.MODEL_ARCH
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-    checkpoint_callback = ModelCheckpoint(
-        dirpath=str(checkpoint_dir),
-        filename="best_model",
-        monitor="val_loss",
-        mode="min",
-        save_top_k=1,
-        verbose=False,
-    )
-
-    early_stopping = EarlyStopping(
-        monitor="val_loss", patience=config.PATIENCE, mode="min", verbose=False
-    )
-
-    logger = TensorBoardLogger(save_dir=str(checkpoint_dir), name="logs")
-
-    trainer = L.Trainer(
-        max_epochs=config.EPOCHS,
-        precision="bf16-mixed",
-        callbacks=[checkpoint_callback, early_stopping],
-        logger=logger,
-        log_every_n_steps=50,
-        enable_model_summary=False,
-    )
-
-    print(f"Starting training for architecture: {config.MODEL_ARCH}")
-    trainer.fit(model, datamodule=datamodule)
-
-    print(f"Best model path: {checkpoint_callback.best_model_path}")
-    print("Training Complete.")
 
 
 if __name__ == "__main__":
-    main()
+    cli_main()
+

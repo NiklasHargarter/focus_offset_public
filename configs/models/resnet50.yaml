@@ -1,0 +1,7 @@
+model:
+  learning_rate: 1e-4
+  backbone:
+    class_path: src.models.architectures.ResNetFocusRegressor
+    init_args:
+      version: resnet50
+      pretrained: true

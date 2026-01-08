@@ -61,10 +61,10 @@ def find_valid_patches(
     downscale_factor: int,
     down_w: int,
     down_h: int,
+    min_tissue_coverage: float = 0.05,
 ) -> list[tuple[int, int]]:
     """Find patches with sufficient tissue coverage."""
     valid_patches = []
-    min_tissue_coverage = config.MIN_TISSUE_COVERAGE
 
     for y in range(0, height - patch_size + 1, stride):
         ds_y = int(y / downscale_factor)
@@ -173,9 +173,10 @@ def save_patch_visualization(
 
 def process_slide(
     vsi_path: Path,
-    patch_size: int = config.PATCH_SIZE,
-    stride: int = config.STRIDE,
-    downscale_factor: int = config.DOWNSCALE_FACTOR,
+    patch_size: int,
+    stride: int,
+    downscale_factor: int,
+    min_tissue_coverage: float = 0.05,
 ) -> dict[str, Any]:
     with suppress_stderr():
         slide = slideio.open_slide(str(vsi_path), "VSI")
@@ -192,7 +193,15 @@ def process_slide(
         save_mask_visualization(vsi_path, mask, suffix="_mask.png")
 
     valid_patches_spatial = find_valid_patches(
-        mask, width, height, patch_size, stride, downscale_factor, down_w, down_h
+        mask,
+        width,
+        height,
+        patch_size,
+        stride,
+        downscale_factor,
+        down_w,
+        down_h,
+        min_tissue_coverage=min_tissue_coverage,
     )
 
     if config.GENERATE_VISUALIZATIONS:
@@ -226,9 +235,7 @@ def process_slide(
     }
 
 
-def resolve_file_list(
-    split_files: list[str], dataset_name: str = config.DATASET_NAME
-) -> list[Path]:
+def resolve_file_list(split_files: list[str], dataset_name: str) -> list[Path]:
     valid_files = []
     missing_files = []
 
@@ -247,7 +254,13 @@ def resolve_file_list(
     return sorted(valid_files)
 
 
-def get_config_state(dataset_name: str = config.DATASET_NAME) -> dict[str, Any]:
+def get_config_state(
+    dataset_name: str,
+    patch_size: int,
+    stride: int,
+    downscale_factor: int,
+    min_tissue_coverage: float,
+) -> dict[str, Any]:
     import hashlib
 
     split_file = config.get_split_path(dataset_name)
@@ -258,19 +271,21 @@ def get_config_state(dataset_name: str = config.DATASET_NAME) -> dict[str, Any]:
             split_hash = hashlib.sha256(f.read()).hexdigest()
 
     return {
-        "PATCH_SIZE": config.PATCH_SIZE,
-        "STRIDE": config.STRIDE,
-        "DOWNSCALE_FACTOR": config.DOWNSCALE_FACTOR,
-        "MIN_TISSUE_COVERAGE": config.MIN_TISSUE_COVERAGE,
+        "PATCH_SIZE": patch_size,
+        "STRIDE": stride,
+        "DOWNSCALE_FACTOR": downscale_factor,
+        "MIN_TISSUE_COVERAGE": min_tissue_coverage,
         "SPLIT_HASH": split_hash,
         "DATASET_NAME": dataset_name,
     }
 
 
 def preprocess_dataset(
-    dataset_name: str = config.DATASET_NAME,
-    patch_size: int = config.PATCH_SIZE,
-    stride: int = config.STRIDE,
+    dataset_name: str,
+    patch_size: int = 224,
+    stride: int = 224,
+    downscale_factor: int = 8,
+    min_tissue_coverage: float = 0.05,
     workers: int | None = None,
     force: bool = False,
     mode: str = None,
@@ -289,7 +304,13 @@ def preprocess_dataset(
     with open(split_file, "r") as f:
         splits = json.load(f)
 
-    current_config = get_config_state(dataset_name=dataset_name)
+    current_config = get_config_state(
+        dataset_name=dataset_name,
+        patch_size=patch_size,
+        stride=stride,
+        downscale_factor=downscale_factor,
+        min_tissue_coverage=min_tissue_coverage,
+    )
 
     for split_name, split_files in splits.items():
         if split_name in ["seed", "total"]:
@@ -329,7 +350,13 @@ def preprocess_dataset(
         if not files:
             continue
 
-        process_func = partial(process_slide, patch_size=patch_size, stride=stride)
+        process_func = partial(
+            process_slide,
+            patch_size=patch_size,
+            stride=stride,
+            downscale_factor=downscale_factor,
+            min_tissue_coverage=min_tissue_coverage,
+        )
         with multiprocessing.Pool(workers) as pool:
             results = pool.map(process_func, files)
 
@@ -362,7 +389,18 @@ def preprocess_dataset(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
+    parser.add_argument("--dataset", type=str, default="ZStack_HE")
+    parser.add_argument("--patch_size", type=int, default=224)
+    parser.add_argument("--stride", type=int, default=224)
+    parser.add_argument("--downscale_factor", type=int, default=8)
+    parser.add_argument("--min_tissue_coverage", type=float, default=0.05)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    preprocess_dataset(dataset_name=args.dataset, force=args.force)
+    preprocess_dataset(
+        dataset_name=args.dataset,
+        patch_size=args.patch_size,
+        stride=args.stride,
+        downscale_factor=args.downscale_factor,
+        min_tissue_coverage=args.min_tissue_coverage,
+        force=args.force,
+    )
