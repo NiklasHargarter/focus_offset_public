@@ -1,6 +1,5 @@
 import os
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 import pickle
@@ -13,6 +12,7 @@ from skimage.filters import threshold_otsu
 
 import config
 from src.utils.io_utils import suppress_stderr
+from src.dataset.vsi_types import SlideMetadata, MasterIndex, PreprocessConfig, Patch
 
 
 def compute_brenner_gradient(image: np.ndarray) -> int:
@@ -132,43 +132,9 @@ def resolve_patch_z_levels(
 
     best_z_indices = np.argmax(patch_scores, axis=1)
     return [
-        (valid_patches[i][0], valid_patches[i][1], int(best_z_indices[i]))
+        Patch(x=valid_patches[i][0], y=valid_patches[i][1], z=int(best_z_indices[i]))
         for i in range(num_patches)
     ]
-
-
-def save_mask_visualization(
-    path: Path, mask: np.ndarray, suffix: str = "_mask.png"
-) -> None:
-    config.VIS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = config.VIS_DIR / f"{path.stem}{suffix}"
-    cv2.imwrite(str(out_path), mask)
-    print(f"Saved visualization to {out_path}")
-
-
-def save_patch_visualization(
-    path: Path,
-    reference_shape: tuple[int, int],
-    patches: list[tuple[int, int]],
-    patch_size: int,
-    downscale_factor: int,
-    suffix: str = "_patch_mask.png",
-) -> None:
-    config.VIS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = config.VIS_DIR / f"{path.stem}{suffix}"
-
-    h, w = reference_shape
-    vis_img = np.zeros((h, w), dtype=np.uint8)
-
-    for vx, vy in patches:
-        dx = int(vx / downscale_factor)
-        dy = int(vy / downscale_factor)
-        dx_end = int((vx + patch_size) / downscale_factor)
-        dy_end = int((vy + patch_size) / downscale_factor)
-        cv2.rectangle(vis_img, (dx, dy), (dx_end, dy_end), 255, -1)
-
-    cv2.imwrite(str(out_path), vis_img)
-    print(f"Saved visualization to {out_path}")
 
 
 def process_slide(
@@ -177,7 +143,7 @@ def process_slide(
     stride: int,
     downscale_factor: int,
     min_tissue_coverage: float = 0.05,
-) -> dict[str, Any]:
+) -> SlideMetadata:
     with suppress_stderr():
         slide = slideio.open_slide(str(vsi_path), "VSI")
     scene = slide.get_scene(0)
@@ -188,9 +154,6 @@ def process_slide(
 
     best_gray_img = select_best_focus_slice(scene, width, height, num_z, down_w, down_h)
     mask = generate_tissue_mask(best_gray_img)
-
-    if config.GENERATE_VISUALIZATIONS:
-        save_mask_visualization(vsi_path, mask, suffix="_mask.png")
 
     valid_patches_spatial = find_valid_patches(
         mask,
@@ -203,15 +166,6 @@ def process_slide(
         down_h,
         min_tissue_coverage=min_tissue_coverage,
     )
-
-    if config.GENERATE_VISUALIZATIONS:
-        save_patch_visualization(
-            vsi_path,
-            mask.shape[:2],
-            valid_patches_spatial,
-            patch_size,
-            downscale_factor,
-        )
 
     final_patches = resolve_patch_z_levels(
         scene,
@@ -226,21 +180,22 @@ def process_slide(
     )
 
     print(f"Processed {vsi_path.name}: {len(final_patches)} valid patches")
-    return {
-        "path": vsi_path,
-        "width": width,
-        "height": height,
-        "num_z": num_z,
-        "patches": final_patches,
-    }
+    return SlideMetadata(
+        name=vsi_path.name,
+        path=vsi_path,
+        width=width,
+        height=height,
+        num_z=num_z,
+        patches=final_patches,
+    )
 
 
-def resolve_file_list(split_files: list[str], dataset_name: str) -> list[Path]:
+def resolve_file_list(filenames: list[str], dataset_name: str) -> list[Path]:
     valid_files = []
     missing_files = []
 
     raw_dir = config.get_vsi_raw_dir(dataset_name)
-    for filename in split_files:
+    for filename in filenames:
         path = raw_dir / filename
         if path.exists():
             valid_files.append(path)
@@ -249,7 +204,7 @@ def resolve_file_list(split_files: list[str], dataset_name: str) -> list[Path]:
 
     if missing_files:
         print(
-            f"Warning: {len(missing_files)} files from split not found on disk for {dataset_name}."
+            f"Warning: {len(missing_files)} files not found on disk for {dataset_name}."
         )
     return sorted(valid_files)
 
@@ -288,103 +243,87 @@ def preprocess_dataset(
     min_tissue_coverage: float = 0.05,
     workers: int | None = None,
     force: bool = False,
-    mode: str = None,
 ) -> None:
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     if workers is None:
         workers = os.cpu_count()
 
-    split_file = config.get_split_path(dataset_name)
+    from src.utils.exact_utils import get_exact_image_list
 
-    if not split_file.exists():
-        print(f"Error: Split file {split_file} not found.")
+    print(f"Fetching image list for {dataset_name} from EXACT...")
+    images_meta = get_exact_image_list(dataset_name=dataset_name)
+    filenames = sorted([img["name"] for img in images_meta])
+
+    current_config = PreprocessConfig(
+        patch_size=patch_size,
+        stride=stride,
+        downscale_factor=downscale_factor,
+        min_tissue_coverage=min_tissue_coverage,
+        dataset_name=dataset_name,
+    )
+
+    output_path = config.get_master_index_path(dataset_name=dataset_name)
+
+    should_generate = force
+    if not output_path.exists():
+        should_generate = True
+    elif not force:
+        try:
+            with open(output_path, "rb") as f:
+                existing_data = pickle.load(f)
+            # Handle both MasterIndex objects and old dicts for transition
+            if isinstance(existing_data, MasterIndex):
+                existing_config = existing_data.config_state
+            else:
+                cfg_dict = existing_data.get("config_state", {})
+                existing_config = PreprocessConfig(**cfg_dict)
+
+            if existing_config == current_config:
+                print(f"Master index for {dataset_name} exists and matches. Skipping.")
+                should_generate = False
+            else:
+                print(f"Master index for {dataset_name} mismatch. Regenerating.")
+                should_generate = True
+        except Exception:
+            should_generate = True
+
+    if not should_generate:
         return
 
-    print(f"Loading splits from {split_file} for {dataset_name}...")
-    with open(split_file, "r") as f:
-        splits = json.load(f)
+    print(f"\n=== Generating Master Index for {dataset_name} ===")
+    files = resolve_file_list(filenames, dataset_name=dataset_name)
+    if not files:
+        print("No files found on disk. Aborting.")
+        return
 
-    current_config = get_config_state(
-        dataset_name=dataset_name,
+    process_func = partial(
+        process_slide,
         patch_size=patch_size,
         stride=stride,
         downscale_factor=downscale_factor,
         min_tissue_coverage=min_tissue_coverage,
     )
+    with multiprocessing.Pool(workers) as pool:
+        results = pool.map(process_func, files)
 
-    for split_name, split_files in splits.items():
-        if split_name in ["seed", "total"]:
-            continue
-        if mode and split_name != mode:
-            continue
+    results = [r for r in results if r is not None]
 
-        output_path = config.get_index_path(split_name, dataset_name=dataset_name)
+    # In the master index, we store the full registry.
+    # We don't bother with cumulative_indices here yet, as these depend on the split.
+    # Actually, let's keep the structure similar but just containing everything.
 
-        should_generate = force
-        if not output_path.exists():
-            should_generate = True
-        elif not force:
-            try:
-                with open(output_path, "rb") as f:
-                    existing_data = pickle.load(f)
-                if existing_data.get("config_state", {}) == current_config:
-                    print(
-                        f"Index for {dataset_name}/{split_name} exists and matches. Skipping."
-                    )
-                    should_generate = False
-                else:
-                    print(
-                        f"Index for {dataset_name}/{split_name} mismatch. Regenerating."
-                    )
-                    should_generate = True
-            except Exception:
-                should_generate = True
+    final_index = MasterIndex(
+        file_registry=results,
+        patch_size=patch_size,
+        config_state=current_config,
+    )
 
-        if not should_generate:
-            continue
+    with open(output_path, "wb") as f:
+        pickle.dump(final_index, f)
 
-        print(
-            f"\n=== Generating Index for {dataset_name} Split: {split_name.upper()} ==="
-        )
-        files = resolve_file_list(split_files, dataset_name=dataset_name)
-        if not files:
-            continue
-
-        process_func = partial(
-            process_slide,
-            patch_size=patch_size,
-            stride=stride,
-            downscale_factor=downscale_factor,
-            min_tissue_coverage=min_tissue_coverage,
-        )
-        with multiprocessing.Pool(workers) as pool:
-            results = pool.map(process_func, files)
-
-        results = [r for r in results if r is not None]
-        file_registry, cumulative_indices, cumulative_count = [], [], 0
-
-        for res in results:
-            samples_in_file = len(res["patches"]) * res["num_z"]
-            cumulative_count += samples_in_file
-            cumulative_indices.append(cumulative_count)
-            file_registry.append(
-                {"path": res["path"], "patches": res["patches"], "num_z": res["num_z"]}
-            )
-
-        final_index = {
-            "file_registry": file_registry,
-            "cumulative_indices": np.array(cumulative_indices, dtype=np.int64),
-            "total_samples": cumulative_count,
-            "patch_size": patch_size,
-            "config_state": current_config,
-        }
-
-        with open(output_path, "wb") as f:
-            pickle.dump(final_index, f)
-
-        print(
-            f"Saved {dataset_name}/{split_name} index to {output_path} ({cumulative_count} samples)"
-        )
+    print(
+        f"Saved master index for {dataset_name} to {output_path} ({len(results)} slides, {final_index.total_samples} total patches)"
+    )
 
 
 if __name__ == "__main__":

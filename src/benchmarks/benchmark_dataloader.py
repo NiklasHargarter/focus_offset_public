@@ -61,14 +61,16 @@ def main():
                     datamodule = VSIDataModule(
                         dataset_name="ZStack_HE",
                         batch_size=batch_size,
-                        num_workers=num_workers
+                        num_workers=num_workers,
                     )
                     datamodule.setup(stage="fit")
-                    
+
                     loader = datamodule.train_dataloader()
-                    
+
                     # Throughput measurement
-                    speed = measure_throughput(loader, batch_size=batch_size, steps=40, warmup=10)
+                    speed = measure_throughput(
+                        loader, batch_size=batch_size, steps=40, warmup=10
+                    )
                     trial_speeds.append(speed)
 
                 avg_speed = sum(trial_speeds) / len(trial_speeds)

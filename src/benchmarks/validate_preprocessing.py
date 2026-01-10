@@ -11,7 +11,7 @@ sys.path.append(str(PROJECT_ROOT))
 from skimage.filters import threshold_otsu  # noqa: E402
 import config  # noqa: E402
 from src.utils.io_utils import suppress_stderr  # noqa: E402
-from src.processing.preprocess import compute_brenner_gradient  # noqa: E402
+from src.dataset.vsi_prep.preprocess import compute_brenner_gradient  # noqa: E402
 from src.dataset.vsi_dataset import VSIDataset  # noqa: E402
 
 

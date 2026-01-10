@@ -6,7 +6,8 @@ import sys
 import random
 
 # Add project root to path
-sys.path.append(str(Path(__file__).resolve().parent))
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+sys.path.append(str(PROJECT_ROOT))
 
 import config
 from src.dataset.jiang2018 import Jiang2018Dataset
@@ -118,7 +119,7 @@ if __name__ == "__main__":
     random.seed(42)
     sample_keys = random.sample(list(groups.keys()), min(5, len(groups)))
 
-    output_dir = Path("visualizations/jiang_checks")
+    output_dir = config.VIS_DIR / "jiang2018"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for i, key in enumerate(sample_keys):

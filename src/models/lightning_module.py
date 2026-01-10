@@ -27,7 +27,14 @@ class FocusOffsetRegressor(L.LightningModule):
         targets = targets.unsqueeze(1)
         outputs = self(images)
         loss = self.criterion(outputs, targets)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log(
+            "train_loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
         return loss
 
     def test_step(self, batch, batch_idx):
@@ -35,16 +42,23 @@ class FocusOffsetRegressor(L.LightningModule):
         targets = targets.unsqueeze(1)
         outputs = self(images)
         loss = self.criterion(outputs, targets)
-        
+
         abs_err = torch.abs(outputs - targets)
         self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        self.log("test_mae", abs_err.mean(), on_step=False, on_epoch=True, sync_dist=True, prog_bar=True)
-        
+        self.log(
+            "test_mae",
+            abs_err.mean(),
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True,
+            prog_bar=True,
+        )
+
         # Collect for std calculation
         if not hasattr(self, "test_step_outputs"):
             self.test_step_outputs = []
         self.test_step_outputs.append(abs_err.detach().cpu())
-        
+
         return abs_err
 
     def on_test_epoch_end(self):
@@ -61,23 +75,34 @@ class FocusOffsetRegressor(L.LightningModule):
         targets = targets.unsqueeze(1)
         outputs = self(images)
         loss = self.criterion(outputs, targets)
-        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
-        
+        self.log(
+            "val_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+
         # Store a few samples from the FIRST batch for visual logging
         if batch_idx == 0:
             self.validation_step_outputs = {
                 "images": images[:8].detach().cpu(),
                 "targets": targets[:8].detach().cpu(),
-                "outputs": outputs[:8].detach().cpu()
+                "outputs": outputs[:8].detach().cpu(),
             }
-        
+
         return loss
 
     def on_validation_epoch_end(self):
         """
         Log sample predictions overlaid on patches to TensorBoard at the end of each validation epoch.
         """
-        if hasattr(self, "validation_step_outputs") and self.logger and hasattr(self.logger.experiment, "add_image"):
+        if (
+            hasattr(self, "validation_step_outputs")
+            and self.logger
+            and hasattr(self.logger.experiment, "add_image")
+        ):
             from PIL import Image, ImageDraw
             import numpy as np
 
@@ -85,32 +110,36 @@ class FocusOffsetRegressor(L.LightningModule):
             imgs = samples["images"]  # [N, 3, H, W]
             targets = samples["targets"]
             outputs = samples["outputs"]
-            
+
             processed_patches = []
-            
+
             for i in range(len(imgs)):
                 # Convert tensor [0, 1] to PIL image [0, 255]
                 img_np = (imgs[i].permute(1, 2, 0).numpy() * 255).astype(np.uint8)
                 img_pil = Image.fromarray(img_np)
-                
+
                 # Draw text overlay
                 draw = ImageDraw.Draw(img_pil)
-                
+
                 pred = outputs[i].item()
                 gt = targets[i].item()
                 text = f"P:{pred:.2f} G:{gt:.2f}"
-                
+
                 # Draw a small shadow/background for readability
                 draw.rectangle([2, 2, 110, 20], fill=(0, 0, 0, 150))
                 draw.text((5, 5), text, fill=(255, 255, 255))
-                
+
                 # Convert back to tensor [0, 1]
-                processed_patches.append(torch.from_numpy(np.array(img_pil)).permute(2, 0, 1).float() / 255.0)
+                processed_patches.append(
+                    torch.from_numpy(np.array(img_pil)).permute(2, 0, 1).float() / 255.0
+                )
 
             # Create and log the grid
             grid = torchvision.utils.make_grid(processed_patches, nrow=4)
-            self.logger.experiment.add_image("val/annotated_samples", grid, self.global_step)
-            
+            self.logger.experiment.add_image(
+                "val/annotated_samples", grid, self.global_step
+            )
+
             # Clear the cache
             del self.validation_step_outputs
 
@@ -123,5 +152,5 @@ class FocusOffsetRegressor(L.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=1e-4)
 
 
-# Note: configure_optimizers can be overridden or supplemented by LightningCLI 
+# Note: configure_optimizers can be overridden or supplemented by LightningCLI
 # using the --optimizer and --lr_scheduler flags in the configuration.

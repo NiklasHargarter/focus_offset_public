@@ -6,7 +6,7 @@ import subprocess
 import pickle
 import lightning as L
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 from torch.utils.data import Dataset, DataLoader
 
 import config
@@ -100,7 +100,7 @@ class Jiang2018Dataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         sample = self.samples[idx]
         img = cv2.imread(str(sample["path"]))
 
@@ -172,9 +172,8 @@ class Jiang2018DataModule(L.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             shuffle=False,
-            pin_memory=torch.cuda.is_available()
+            pin_memory=torch.cuda.is_available(),
         )
 
     def predict_dataloader(self):
         return self.test_dataloader()
-

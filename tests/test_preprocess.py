@@ -8,12 +8,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.processing.preprocess import (  # noqa: E402
+from src.dataset.vsi_prep.preprocess import (  # noqa: E402
     compute_brenner_gradient,
     find_valid_patches,
     select_best_focus_slice,
     generate_tissue_mask,
-)  # noqa: E402
+)
+
+
+
+
+
 from unittest.mock import MagicMock, patch  # noqa: E402
 
 
@@ -67,7 +72,7 @@ class TestMaskProcessing(unittest.TestCase):
         # 1% coverage (invalid)
         mask[0, 30] = 255
 
-        with patch("src.processing.preprocess.config") as mock_config:
+        with patch("src.dataset.vsi_prep.preprocess.config") as mock_config:
             mock_config.MIN_TISSUE_COVERAGE = 0.05
 
             valid_patches = find_valid_patches(

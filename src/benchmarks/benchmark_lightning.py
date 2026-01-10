@@ -10,7 +10,12 @@ sys.path.append(str(PROJECT_ROOT))
 
 from src.dataset.vsi_datamodule import VSIDataModule  # noqa: E402
 from src.models.lightning_module import FocusOffsetRegressor  # noqa: E402
-from src.models.architectures import ResNetFocusRegressor, ViTFocusRegressor, ConvNeXtFocusRegressor, EfficientNetFocusRegressor  # noqa: E402
+from src.models.architectures import (
+    ResNetFocusRegressor,
+    ViTFocusRegressor,
+    ConvNeXtFocusRegressor,
+    EfficientNetFocusRegressor,
+)  # noqa: E402
 
 # Enable Tensor Cores globally if not handled by Trainer
 torch.set_float32_matmul_precision("medium")
@@ -136,12 +141,15 @@ def main():
 
     for arch_name in arch_list:
         try:
-            res = benchmark_architecture(arch_name, train_loader, dataset_size, batch_size)
+            res = benchmark_architecture(
+                arch_name, train_loader, dataset_size, batch_size
+            )
             if res:
                 results.append(res)
         except Exception as e:
             print(f"Skipping {arch_name} due to error: {e}")
             import traceback
+
             traceback.print_exc()
 
     print("\n\n=== LIGHTNING BENCHMARK SUMMARY (AMP 16) ===")
@@ -157,4 +165,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

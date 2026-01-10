@@ -26,5 +26,9 @@ def get_index_path(mode: str, dataset_name: str = DATASET_NAME) -> Path:
     return CACHE_DIR / f"dataset_index_{dataset_name}_{mode}.pkl"
 
 
-# Visualization Flags
-GENERATE_VISUALIZATIONS = True
+def get_master_index_path(dataset_name: str = DATASET_NAME) -> Path:
+    """Path to the master index file for all slides in a dataset."""
+    return CACHE_DIR / f"master_index_{dataset_name}.pkl"
+
+
+

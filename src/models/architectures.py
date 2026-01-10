@@ -76,7 +76,9 @@ class EfficientNetFocusRegressor(BaseFocusRegressor):
     def __init__(self, version: str = "b0", pretrained: bool = True):
         super().__init__()
         if version == "b0":
-            weights = models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None
+            weights = (
+                models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None
+            )
             self.model = models.efficientnet_b0(weights=weights)
         else:
             raise ValueError(f"Unsupported EfficientNet version: {version}")
