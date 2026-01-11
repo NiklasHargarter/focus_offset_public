@@ -9,8 +9,8 @@ import random
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.append(str(PROJECT_ROOT))
 
-import config
-from src.dataset.jiang2018 import Jiang2018Dataset
+import config  # noqa: E402
+from src.dataset.jiang2018 import Jiang2018Dataset  # noqa: E402
 
 
 def visualize_segment(samples: list, output_path: Path, stack_title: str):

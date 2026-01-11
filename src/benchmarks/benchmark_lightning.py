@@ -10,12 +10,12 @@ sys.path.append(str(PROJECT_ROOT))
 
 from src.dataset.vsi_datamodule import VSIDataModule  # noqa: E402
 from src.models.lightning_module import FocusOffsetRegressor  # noqa: E402
-from src.models.architectures import (
+from src.models.architectures import (  # noqa: E402
     ResNetFocusRegressor,
     ViTFocusRegressor,
     ConvNeXtFocusRegressor,
     EfficientNetFocusRegressor,
-)  # noqa: E402
+)
 
 # Enable Tensor Cores globally if not handled by Trainer
 torch.set_float32_matmul_precision("medium")

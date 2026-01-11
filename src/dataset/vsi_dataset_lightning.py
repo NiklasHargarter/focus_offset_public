@@ -7,7 +7,7 @@ from typing import Optional, Callable, Any
 from src.utils.io_utils import suppress_stderr
 
 
-from src.dataset.vsi_types import ProcessedIndex, SlideMetadata, Patch
+from src.dataset.vsi_types import ProcessedIndex, SlideMetadata
 
 
 class VSIDatasetLightning(Dataset):
@@ -85,9 +85,19 @@ class VSIDatasetLightning(Dataset):
         z_res_microns = scene.z_resolution * 1e6
         z_offset = float(best_z - z_level) * z_res_microns
 
-        rect = (x, y, self.patch_size, self.patch_size)
+        rect = (
+            x,
+            y,
+            self.patch_size,
+            self.patch_size,
+        )
         try:
-            block = scene.read_block(rect=rect, slices=(z_level, z_level + 1))
+            # Efficient runtime reading
+            block = scene.read_block(
+                rect=rect,
+                size=(self.patch_size, self.patch_size),
+                slices=(z_level, z_level + 1),
+            )
 
             if self.transform:
                 image = self.transform(block)

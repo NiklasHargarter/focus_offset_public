@@ -7,10 +7,18 @@ VIS_DIR = PROJECT_ROOT / "visualizations"
 CACHE_DIR = PROJECT_ROOT / "cache"
 CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints"
 DATASET_NAME = "ZStack_HE"  # Default fallback
+PATCH_SIZE = 224
 
 
 def get_vsi_raw_dir(dataset_name: str = DATASET_NAME) -> Path:
     return Path(f"/home/niklas/{dataset_name}/raws")
+
+
+def get_vis_dir(dataset_name: str = DATASET_NAME, patch_size: int = PATCH_SIZE) -> Path:
+    """Path to the visualization directory for a given dataset and patch size."""
+    path = VIS_DIR / f"p{patch_size}" / dataset_name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def get_vsi_zip_dir(dataset_name: str = DATASET_NAME) -> Path:
@@ -21,14 +29,19 @@ def get_split_path(dataset_name: str = DATASET_NAME) -> Path:
     return PROJECT_ROOT / f"splits_{dataset_name}.json"
 
 
-def get_index_path(mode: str, dataset_name: str = DATASET_NAME) -> Path:
+def get_index_path(
+    mode: str, dataset_name: str = DATASET_NAME, patch_size: int = PATCH_SIZE
+) -> Path:
     """Path to the index file for a given split (train/val/test) and dataset."""
-    return CACHE_DIR / f"dataset_index_{dataset_name}_{mode}.pkl"
+    path = CACHE_DIR / f"p{patch_size}" / f"dataset_index_{dataset_name}_{mode}.pkl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
-def get_master_index_path(dataset_name: str = DATASET_NAME) -> Path:
+def get_master_index_path(
+    dataset_name: str = DATASET_NAME, patch_size: int = PATCH_SIZE
+) -> Path:
     """Path to the master index file for all slides in a dataset."""
-    return CACHE_DIR / f"master_index_{dataset_name}.pkl"
-
-
-
+    path = CACHE_DIR / f"p{patch_size}" / f"master_index_{dataset_name}.pkl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path

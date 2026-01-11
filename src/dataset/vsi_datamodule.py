@@ -26,12 +26,13 @@ class BaseVSIDataModule(L.LightningDataModule):
     def __init__(
         self,
         dataset_name: str,
-        batch_size: int = 128,
-        num_workers: int = 16,
-        patch_size: int = 224,
-        stride: int = 224,
-        downscale_factor: int = 8,
-        min_tissue_coverage: float = 0.05,
+        batch_size: int,
+        num_workers: int,
+        patch_size: int,
+        downscale_factor: int,
+        min_tissue_coverage: float,
+        focus_patch_size: int | None = None,
+        split_ratio: float = 0.3, # Keep this as it's not a core param? User said "get rid of default values... all values should come from config or be required".
         cache_dir: str = "cache",
     ):
         super().__init__()
@@ -39,9 +40,13 @@ class BaseVSIDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.patch_size = patch_size
-        self.stride = stride
         self.downscale_factor = downscale_factor
         self.min_tissue_coverage = min_tissue_coverage
+        
+        if focus_patch_size is None:
+            focus_patch_size = patch_size * 10
+        self.focus_patch_size = focus_patch_size
+        self.split_ratio = split_ratio
         self.cache_dir = Path(cache_dir)
 
         self.train_dataset: Optional[torch.utils.data.Dataset] = None
@@ -60,14 +65,15 @@ class BaseVSIDataModule(L.LightningDataModule):
         preprocess_dataset(
             dataset_name=self.dataset_name,
             patch_size=self.patch_size,
-            stride=self.stride,
             downscale_factor=self.downscale_factor,
             min_tissue_coverage=self.min_tissue_coverage,
+            focus_patch_size=self.focus_patch_size,
         )
 
         # 3. Create splits (test vs train_pool) based on master index
         create_split(
             dataset_name=self.dataset_name,
+            split_ratio=self.split_ratio,
         )
 
         print(f"\nData preparation for {self.dataset_name} complete.")
@@ -101,7 +107,9 @@ class BaseVSIDataModule(L.LightningDataModule):
         )
 
     def _load_data_indices(self) -> tuple[MasterIndex, dict]:
-        master_index_path = config.get_master_index_path(self.dataset_name)
+        master_index_path = config.get_master_index_path(
+            self.dataset_name, patch_size=self.patch_size
+        )
         split_path = config.get_split_path(self.dataset_name)
 
         if not master_index_path.exists() or not split_path.exists():

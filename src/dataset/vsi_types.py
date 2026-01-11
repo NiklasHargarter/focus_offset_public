@@ -1,4 +1,4 @@
-from typing import Any, NamedTuple
+from typing import NamedTuple
 from dataclasses import dataclass
 from pathlib import Path
 from functools import cached_property
@@ -37,7 +37,7 @@ class PreprocessConfig:
     """Configuration used during preprocessing for traceability."""
 
     patch_size: int
-    stride: int
+    focus_patch_size: int
     downscale_factor: int
     min_tissue_coverage: float
     dataset_name: str

@@ -18,5 +18,8 @@ cache/
 visualizations/
 logs/
 
+# Images
+*.png
+
 # System
 .DS_Store

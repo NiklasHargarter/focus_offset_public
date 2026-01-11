@@ -11,7 +11,7 @@ from src.dataset.vsi_types import MasterIndex
 def create_split(
     dataset_name: str,
     force: bool = False,
-    split_ratio: float = 0.1,
+    split_ratio: float = 0.3,
     seed: int = 42,
 ) -> None:
     """Generate image splits (test and train_pool) from master index."""
@@ -49,7 +49,7 @@ def create_split(
     random.shuffle(slides)
 
     # Sort by size descending for greedy packing (better stability)
-    slides = sorted(slides, key=lambda x: x["count"], reverse=True)
+    # slides = sorted(slides, key=lambda x: x["count"], reverse=True)
 
     test_files = []
     train_pool_files = []
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="ZStack_HE")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--split_ratio", type=float, default=0.1)
+    parser.add_argument("--split_ratio", type=float, default=0.3)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 

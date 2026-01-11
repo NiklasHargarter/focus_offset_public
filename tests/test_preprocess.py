@@ -16,9 +16,6 @@ from src.dataset.vsi_prep.preprocess import (  # noqa: E402
 )
 
 
-
-
-
 from unittest.mock import MagicMock, patch  # noqa: E402
 
 

@@ -8,3 +8,4 @@ data:
     stride: 224
     downscale_factor: 8
     min_tissue_coverage: 0.05
+    split_ratio: 0.3
