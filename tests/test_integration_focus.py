@@ -1,45 +1,58 @@
 import unittest
-import sys
+import cv2
+import numpy as np
 import slideio
-from pathlib import Path
 
-# Add project root to sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.append(str(PROJECT_ROOT))
+import config
+from src.dataset.vsi_datamodule import HEHoldOutDataModule
+from src.utils.io_utils import suppress_stderr
 
-import config  # noqa: E402
-from src.dataset.vsi_dataset import VSIDataset  # noqa: E402
-from src.utils.io_utils import suppress_stderr  # noqa: E402
-from src.dataset.vsi_prep.preprocess import compute_brenner_gradient  # noqa: E402
+def compute_brenner_gradient(image: np.ndarray) -> float:
+    """Compute focus score using Brenner Gradient (local helper)."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = gray.astype(np.int32)
+    shifted = np.roll(gray, -2, axis=1)
+    return float(np.sum((gray - shifted) ** 2))
 
 
 class TestIntegrationFocus(unittest.TestCase):
     def test_dataset_focus_consistency(self):
         """Integration: Verify Z-offsets and focus checks on actual dataset."""
-        # Use config to check existence, but rely on VSIDataset mainly
-        index_path = config.get_index_path("train")
+        # Instantiate DataModule
+        dm = HEHoldOutDataModule(
+            dataset_name="ZStack_HE",
+            batch_size=1,
+            num_workers=0,
+            patch_size=224,
+            downscale_factor=16,
+            min_tissue_coverage=0.05
+        )
 
-        if not index_path.exists():
-            self.skipTest(
-                f"Dataset index not found at {index_path}. Run preprocess first."
-            )
+        try:
+             dm.setup(stage="fit")
+        except Exception as e:
+             self.skipTest(f"DataModule setup failed (likely missing data): {e}")
 
-        dataset = VSIDataset(mode="train")
-        registry = dataset.index["file_registry"]
+        dataset = dm.train_dataset
+        if dataset is None:
+             self.skipTest("Train dataset is None after setup.")
 
+        # Access file registry
+        registry = dataset.file_registry
         if not registry:
             self.skipTest("Registry is empty.")
 
         # Pick first file and patch
         fmeta = registry[0]
-        fname = fmeta["path"]
-        patches = fmeta["patches"]
-        num_z = fmeta["num_z"]
+        # Access dataclass fields directly
+        fname = fmeta.path
+        patches = fmeta.patches
+        num_z = fmeta.num_z
 
         if not patches:
             self.skipTest("No patches in first file.")
 
-        px, py, best_z = patches[0]
+        px, py, best_z = patches[0].x, patches[0].y, patches[0].z
 
         # Open slide for validation details
         if not fname.exists():

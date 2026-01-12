@@ -3,8 +3,6 @@ from pathlib import Path
 import time
 import json
 import numpy as np
-import cv2
-import slideio
 import matplotlib.pyplot as plt
 
 # Add project root to path
@@ -16,7 +14,6 @@ from src.dataset.vsi_prep.preprocess import (  # noqa: E402
     calculate_stability_metrics,
 )
 from src.dataset.vsi_types import PreprocessConfig  # noqa: E402
-from src.utils.io_utils import suppress_stderr  # noqa: E402
 
 
 def save_3d_heatmap(final_patches, height, width, ps, title, output_path):

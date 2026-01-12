@@ -85,14 +85,18 @@ class VSIDatasetLightning(Dataset):
         z_res_microns = scene.z_resolution * 1e6
         z_offset = float(best_z - z_level) * z_res_microns
 
+        # Area on slide depends on binning
+        read_patch_size = self.patch_size * self.index.binning_factor
+        
         rect = (
             x,
             y,
-            self.patch_size,
-            self.patch_size,
+            read_patch_size,
+            read_patch_size,
         )
         try:
-            # Efficient runtime reading
+            # Efficient runtime reading: 
+            # 'size' argument performs downsampling (binning) automatically
             block = scene.read_block(
                 rect=rect,
                 size=(self.patch_size, self.patch_size),

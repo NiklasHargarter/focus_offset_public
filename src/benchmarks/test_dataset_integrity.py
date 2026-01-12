@@ -1,18 +1,19 @@
 import time
-import sys
-from pathlib import Path
 
-# Add project root to sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.append(str(PROJECT_ROOT))
-
-from src.dataset.vsi_datamodule import VSIDataModule  # noqa: E402
+from src.dataset.vsi_datamodule import HEHoldOutDataModule
 
 
 def main():
     print("Initializing DataModule...")
     # Use default params from VSIDataModule or specify them here
-    datamodule = VSIDataModule(dataset_name="ZStack_HE")
+    datamodule = HEHoldOutDataModule(
+        dataset_name="ZStack_HE",
+        batch_size=8,
+        num_workers=4,
+        patch_size=224,
+        downscale_factor=16,
+        min_tissue_coverage=0.05
+    )
 
     print("Setting up dataset...")
     datamodule.setup(stage="fit")

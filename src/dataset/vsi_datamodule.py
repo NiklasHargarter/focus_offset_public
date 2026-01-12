@@ -32,7 +32,8 @@ class BaseVSIDataModule(L.LightningDataModule):
         downscale_factor: int,
         min_tissue_coverage: float,
         focus_patch_size: int | None = None,
-        split_ratio: float = 0.3, # Keep this as it's not a core param? User said "get rid of default values... all values should come from config or be required".
+        split_ratio: float = 0.3,
+        binning_factor: int = 1,
         cache_dir: str = "cache",
     ):
         super().__init__()
@@ -40,6 +41,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.patch_size = patch_size
+        self.binning_factor = binning_factor
         self.downscale_factor = downscale_factor
         self.min_tissue_coverage = min_tissue_coverage
         
@@ -65,6 +67,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         preprocess_dataset(
             dataset_name=self.dataset_name,
             patch_size=self.patch_size,
+            binning_factor=self.binning_factor,
             downscale_factor=self.downscale_factor,
             min_tissue_coverage=self.min_tissue_coverage,
             focus_patch_size=self.focus_patch_size,
@@ -104,6 +107,7 @@ class BaseVSIDataModule(L.LightningDataModule):
             file_registry=filtered_registry,
             cumulative_indices=cumulative_indices,
             patch_size=master_index.patch_size,
+            binning_factor=master_index.config_state.binning_factor,
         )
 
     def _load_data_indices(self) -> tuple[MasterIndex, dict]:

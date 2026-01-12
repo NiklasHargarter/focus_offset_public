@@ -41,6 +41,7 @@ class PreprocessConfig:
     downscale_factor: int
     min_tissue_coverage: float
     dataset_name: str
+    binning_factor: int = 1
 
 
 @dataclass
@@ -63,6 +64,7 @@ class ProcessedIndex:
     file_registry: list[SlideMetadata]
     cumulative_indices: list[int]
     patch_size: int
+    binning_factor: int = 1
 
     @cached_property
     def total_samples(self) -> int:

@@ -1,18 +1,20 @@
-import sys
 import os
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.append(str(PROJECT_ROOT))
-
-from src.dataset.vsi_datamodule import VSIDataModule  # noqa: E402
+from src.dataset.vsi_datamodule import HEHoldOutDataModule
 
 
 def test_datamodule_integration():
     """Actual integration test for VSIDataModule."""
     print("\n--- Starting VSIDataModule Integration Test ---")
 
-    dm = VSIDataModule(batch_size=2, num_workers=0)
+    dm = HEHoldOutDataModule(
+        dataset_name="ZStack_HE",
+        batch_size=2,
+        num_workers=0,
+        patch_size=224,
+        downscale_factor=16,
+        min_tissue_coverage=0.05
+    )
 
     print("\n[Stage 1] Running prepare_data()...")
     try:
