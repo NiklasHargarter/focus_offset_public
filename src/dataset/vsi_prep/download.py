@@ -6,7 +6,6 @@ from exact_sync.v1.api_client import ApiClient
 from exact_sync.v1.api.images_api import ImagesApi
 from src.utils.exact_utils import get_exact_image_list
 
-
 def download_dataset(dataset_name: str = config.DATASET_NAME) -> None:
     """Download missing VSI zips from EXACT."""
     print(f"Fetching full image list for {dataset_name} from EXACT...")
@@ -47,7 +46,6 @@ def download_dataset(dataset_name: str = config.DATASET_NAME) -> None:
             print(f"Skipping {target_name} (already exists).")
 
     print(f"Download process for {dataset_name} complete.")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

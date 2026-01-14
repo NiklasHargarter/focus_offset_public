@@ -5,23 +5,20 @@ import re
 import sys
 import random
 
-# Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.append(str(PROJECT_ROOT))
 
-import config  # noqa: E402
-from src.dataset.jiang2018 import Jiang2018Dataset  # noqa: E402
-
+import config
+from src.dataset.jiang2018 import Jiang2018Dataset
 
 def visualize_segment(samples: list, output_path: Path, stack_title: str):
     """
     Visualize a single segment's stack.
     samples: List of {"path": ..., "offset": ...}
     """
-    # Sort samples by offset
+
     samples = sorted(samples, key=lambda x: x["offset"])
 
-    # Prepare data for plotting
     plot_data = []
     for s in samples:
         path = s["path"]
@@ -57,21 +54,16 @@ def visualize_segment(samples: list, output_path: Path, stack_title: str):
         ax = axes[i]
         img_rgb = cv2.cvtColor(d["image"], cv2.COLOR_BGR2RGB)
 
-        # Place image in the top part of the axes area
-        # Extent: [left, right, bottom, top]
         ax.imshow(img_rgb, extent=[0, 10, 5, 15])
 
-        # Labels in the bottom part of the SAME axes area
         label = f"Off: {d['rel_offset']:.2f} um\nPos: {d['abs_nm']:.0f} nm\nScore: {d['score']:.0e}"
         ax.text(5, 2.5, label, ha="center", va="center", fontsize=11, linespacing=1.5)
 
-        # Set limits and hide ticks to create the card look
         ax.set_xlim(0, 10)
         ax.set_ylim(0, 15)
         ax.set_xticks([])
         ax.set_yticks([])
 
-        # Style the single shared border
         for spine in ax.spines.values():
             spine.set_visible(True)
             if d["is_best"]:
@@ -85,15 +77,14 @@ def visualize_segment(samples: list, output_path: Path, stack_title: str):
         axes[i].axis("off")
 
     plt.suptitle(stack_title, fontsize=20, y=0.98)
-    # Adjust layout to make room for suptitle and labels
+
     plt.tight_layout(rect=[0, 0.05, 1, 0.95])
     plt.savefig(output_path, dpi=100)
     plt.close()
     print(f"Visualization saved to {output_path}")
 
-
 if __name__ == "__main__":
-    # 1. Initialize Dataset (this loads the cache)
+
     raw_dir = config.get_vsi_raw_dir("Jiang2018")
     dataset = Jiang2018Dataset(raw_dir)
 
@@ -101,8 +92,6 @@ if __name__ == "__main__":
         print("No samples found in dataset index. Check data/cache.")
         sys.exit(1)
 
-    # 2. Group samples by Stack and Segment
-    # Structure: { (stack_dir_name, seg_id): [sample1, sample2, ...] }
     groups = {}
     for s in dataset.samples:
         path = s["path"]
@@ -115,7 +104,6 @@ if __name__ == "__main__":
                 groups[key] = []
             groups[key].append(s)
 
-    # 3. Pick 5 random groups to visualize
     random.seed(42)
     sample_keys = random.sample(list(groups.keys()), min(5, len(groups)))
 

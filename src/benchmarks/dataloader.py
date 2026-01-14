@@ -3,17 +3,15 @@ import sys
 from pathlib import Path
 import os
 
-# Add project root to path for imports
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.dataset.vsi_datamodule import VSIDataModule  # noqa: E402
-
+from src.dataset.vsi_datamodule import VSIDataModule
+"""Benchmark The VSI Datamodule"""
 
 def measure_throughput(loader, batch_size, steps=50, warmup=10):
     iter_loader = iter(loader)
 
-    # Warmup
     for _ in range(warmup):
         next(iter_loader)
 
@@ -27,12 +25,11 @@ def measure_throughput(loader, batch_size, steps=50, warmup=10):
     items_per_sec = (steps * batch_size) / duration
     return items_per_sec
 
-
 def main():
     print("--- VSI Loader Scaling Benchmark (DataModule Version) ---")
 
     cpu_count = os.cpu_count() or 8
-    # Define search grid
+
     worker_options = sorted(list(set([8, 16, cpu_count])))
     worker_options = [w for w in worker_options if w <= cpu_count + 4]
 
@@ -42,11 +39,17 @@ def main():
     print(f"Testing Batch Sizes: {batch_size_options}")
     print("-" * 60)
 
+    print("Initial integrity check...")
+    check_dm = VSIDataModule(dataset_name="ZStack_HE", batch_size=batch_size_options[0], num_workers=worker_options[0])
+    check_dm.setup(stage="fit")
+    first_batch = next(iter(check_dm.train_dataloader()))
+    print(f"Sample Batch Shape - Img: {first_batch[0].shape}, Target: {first_batch[1].shape}")
+    print("-" * 60)
+
     results = []
     best_throughput = 0.0
     best_config = (0, 0)
 
-    # Header
     print(
         f"{'Workers':<10} {'Batch Size':<12} {'Avg Throughput (img/s)':<25} {'Runs':<20}"
     )
@@ -54,10 +57,10 @@ def main():
     for num_workers in worker_options:
         for batch_size in batch_size_options:
             try:
-                # Run 3 trials
+
                 trial_speeds = []
                 for i in range(3):
-                    # Use the DataModule for each trial
+
                     datamodule = VSIDataModule(
                         dataset_name="ZStack_HE",
                         batch_size=batch_size,
@@ -67,7 +70,6 @@ def main():
 
                     loader = datamodule.train_dataloader()
 
-                    # Throughput measurement
                     speed = measure_throughput(
                         loader, batch_size=batch_size, steps=40, warmup=10
                     )
@@ -95,7 +97,6 @@ def main():
     print(
         f"Optimal Configuration: Workers={best_config[0]}, Batch Size={best_config[1]}"
     )
-
 
 if __name__ == "__main__":
     main()

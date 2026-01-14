@@ -4,9 +4,7 @@ import json
 import config
 import pickle
 
-
 from src.dataset.vsi_types import MasterIndex
-
 
 def create_split(
     dataset_name: str,
@@ -36,30 +34,21 @@ def create_split(
     for entry in file_registry:
         slides.append({"name": entry.name, "count": entry.total_samples})
 
-    # Total patches across all slides
     total_patches = sum(s["count"] for s in slides)
     target_test_count = total_patches * split_ratio
 
     print(f"Total slides: {len(slides)}, Total patches: {total_patches}")
     print(f"Target test patches: {target_test_count:.0f} ({split_ratio:.1%})")
 
-    # Use Relative Deficit / Greedy for test set selection
-    # We shuffle first to avoid always picking the same "large" slides if seeds vary
     random.seed(seed)
     random.shuffle(slides)
-
-    # Sort by size descending for greedy packing (better stability)
-    # slides = sorted(slides, key=lambda x: x["count"], reverse=True)
 
     test_files = []
     train_pool_files = []
     current_test_count = 0
 
-    # Primary Split: Test vs Train Pool
-    # We want current_test_count / target_test_count to be close to 1
     for slide in slides:
-        # If adding this slide brings us closer to the target than not adding it?
-        # Or a simpler greedy: add if not over capacity.
+
         if current_test_count < target_test_count:
             test_files.append(slide["name"])
             current_test_count += slide["count"]
@@ -85,7 +74,6 @@ def create_split(
         json.dump(split_data, f, indent=4)
 
     print(f"Saved splits to {split_file}")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

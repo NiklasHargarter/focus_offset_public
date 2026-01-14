@@ -6,7 +6,6 @@ from exact_sync.v1.api.images_api import ImagesApi
 from exact_sync.v1.api.image_sets_api import ImageSetsApi
 import config
 
-
 def get_exact_image_list(dataset_name: str = config.DATASET_NAME) -> list[dict]:
     """Fetch image list from EXACT and cache results."""
     cache_file = config.CACHE_DIR / f"exact_images_{dataset_name}.json"

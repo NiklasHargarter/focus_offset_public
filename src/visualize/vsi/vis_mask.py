@@ -9,7 +9,6 @@ from src.dataset.vsi_prep.preprocess import (
     generate_tissue_mask,
 )
 
-
 def save_mask(vsi_path: Path):
     output_dir = config.VIS_DIR / "vsi" / vsi_path.stem
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -22,7 +21,6 @@ def save_mask(vsi_path: Path):
     width, height = scene.size
     num_z = scene.num_z_slices
 
-    # Use default downscale for vis
     ds = 8
     dw, dh = width // ds, height // ds
 
@@ -30,7 +28,6 @@ def save_mask(vsi_path: Path):
     mask = generate_tissue_mask(best_gray)
     cv2.imwrite(str(out_path), mask)
     print(f"Saved: {out_path}")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

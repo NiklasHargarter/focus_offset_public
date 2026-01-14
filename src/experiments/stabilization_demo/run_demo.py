@@ -5,16 +5,14 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Add project root to path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.dataset.vsi_prep.preprocess import (  # noqa: E402
+from src.dataset.vsi_prep.preprocess import (
     SlidePreprocessor,
     calculate_stability_metrics,
 )
-from src.dataset.vsi_types import PreprocessConfig  # noqa: E402
-
+from src.dataset.vsi_types import PreprocessConfig
 
 def save_3d_heatmap(final_patches, height, width, ps, title, output_path):
     """Save a 3D surface-like plot of the focal plane."""
@@ -25,7 +23,6 @@ def save_3d_heatmap(final_patches, height, width, ps, title, output_path):
     ys = [p.y for p in final_patches]
     zs = [p.z for p in final_patches]
 
-    # Use scatter for 3D vis as it's easier for sparse/patchy data
     sc = ax.scatter(xs, ys, zs, c=zs, cmap="viridis", s=2)
 
     ax.set_title(title)
@@ -37,7 +34,6 @@ def save_3d_heatmap(final_patches, height, width, ps, title, output_path):
     plt.colorbar(sc, ax=ax, label="Z Slice")
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
-
 
 def save_2d_heatmap(final_patches, height, width, ps, title, output_path):
     """Save a high-quality 2D heatmap."""
@@ -59,10 +55,8 @@ def save_2d_heatmap(final_patches, height, width, ps, title, output_path):
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
 
-
 def run_demo(vsi_path: Path, output_dir: Path):
     print(f"Running stabilization demo for: {vsi_path.name}")
-
 
     ps = 224
     configs = [
@@ -85,8 +79,7 @@ def run_demo(vsi_path: Path, output_dir: Path):
         print(f"  Processing {name}...")
 
         start_time = time.time()
-        
-        # Instantiate Processor with correct config
+
         preprocess_config = PreprocessConfig(
              patch_size=ps,
              focus_patch_size=cfg["fps"],
@@ -95,15 +88,13 @@ def run_demo(vsi_path: Path, output_dir: Path):
              dataset_name="ZStack_HE"
         )
         processor = SlidePreprocessor(preprocess_config)
-        
-        # Run processing
+
         metadata = processor.process(vsi_path)
         final_patches = metadata.patches
-        width, height = metadata.width, metadata.height # Capture dims from metadata
+        width, height = metadata.width, metadata.height
         duration = time.time() - start_time
         tv, outliers = calculate_stability_metrics(final_patches, width, height, ps)
 
-        # 3. Save Visualizations
         save_2d_heatmap(
             final_patches,
             height,
@@ -129,12 +120,10 @@ def run_demo(vsi_path: Path, output_dir: Path):
             "patch_count": len(final_patches),
         }
 
-    # Save Report
     with open(output_dir / "stabilization_report.json", "w") as f:
         json.dump(stats, f, indent=4)
 
     print(f"Demo complete. Results saved to {output_dir}")
-
 
 if __name__ == "__main__":
     vsi_path = Path("/home/niklas/ZStack_HE/raws/001_1_HE_stack.vsi")

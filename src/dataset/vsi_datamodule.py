@@ -13,9 +13,7 @@ from src.dataset.vsi_prep.fix_zip import fix_zip_structure
 from src.dataset.vsi_prep.create_split import create_split
 from src.dataset.vsi_prep.preprocess import preprocess_dataset
 
-
 from src.dataset.vsi_types import MasterIndex, ProcessedIndex
-
 
 class BaseVSIDataModule(L.LightningDataModule):
     """
@@ -44,7 +42,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         self.binning_factor = binning_factor
         self.downscale_factor = downscale_factor
         self.min_tissue_coverage = min_tissue_coverage
-        
+
         if focus_patch_size is None:
             focus_patch_size = patch_size * 10
         self.focus_patch_size = focus_patch_size
@@ -59,11 +57,9 @@ class BaseVSIDataModule(L.LightningDataModule):
         """Preparation logic (download, unzip, split, preprocess) for the dataset."""
         print(f"Ensuring data environment for {self.dataset_name} is ready...")
 
-        # 1. Download and fix zips if necessary
         download_dataset(dataset_name=self.dataset_name)
         fix_zip_structure(dataset_name=self.dataset_name)
 
-        # 2. Preprocess entire dataset to get master index
         preprocess_dataset(
             dataset_name=self.dataset_name,
             patch_size=self.patch_size,
@@ -73,7 +69,6 @@ class BaseVSIDataModule(L.LightningDataModule):
             focus_patch_size=self.focus_patch_size,
         )
 
-        # 3. Create splits (test vs train_pool) based on master index
         create_split(
             dataset_name=self.dataset_name,
             split_ratio=self.split_ratio,
@@ -170,7 +165,6 @@ class BaseVSIDataModule(L.LightningDataModule):
     def predict_dataloader(self):
         return self.test_dataloader()
 
-
 class HEHoldOutDataModule(BaseVSIDataModule):
     """HE DataModule with a simple static train/val split from the train pool."""
 
@@ -210,7 +204,6 @@ class HEHoldOutDataModule(BaseVSIDataModule):
             test_index = self._filter_index(master_index, splits["test"])
             self.test_dataset = VSIDatasetLightning(index_data=test_index)
 
-
 class HEFoldDataModule(BaseVSIDataModule):
     """HE DataModule with K-fold cross-validation split from the train pool."""
 
@@ -228,7 +221,6 @@ class HEFoldDataModule(BaseVSIDataModule):
         if stage == "fit" or stage is None:
             train_pool = splits["train_pool"]
 
-            # Simple Round-Robin on a sorted list by size
             slides = []
             name_to_count = {
                 entry.name: entry.total_samples for entry in master_index.file_registry
@@ -236,7 +228,6 @@ class HEFoldDataModule(BaseVSIDataModule):
             for name in train_pool:
                 slides.append({"name": name, "count": name_to_count[name]})
 
-            # Sort by size for packing (descending)
             slides = sorted(slides, key=lambda x: x["count"], reverse=True)
 
             folds = [[] for _ in range(self.num_folds)]
@@ -263,7 +254,6 @@ class HEFoldDataModule(BaseVSIDataModule):
             test_index = self._filter_index(master_index, splits["test"])
             self.test_dataset = VSIDatasetLightning(index_data=test_index)
 
-
 class IHCDataModule(BaseVSIDataModule):
     """IHC DataModule, typically used for tests/evaluation only."""
 
@@ -274,17 +264,17 @@ class IHCDataModule(BaseVSIDataModule):
 
     def setup(self, stage: Optional[str] = None):
         master_index, splits = self._load_data_indices()
-        # For IHC, we often just use everything as test or have simplified splits
-        # Here, we follow the same splits.json structure if it exists
+
         if stage == "fit" or stage is None:
             train_index = self._filter_index(master_index, splits.get("train_pool", []))
             self.train_dataset = VSIDatasetLightning(index_data=train_index)
-            # Empty val
+
             self.val_dataset = None
 
         if stage == "test" or stage == "predict" or stage is None:
             test_files = splits.get("test", [])
-            # If test is empty but train_pool is not, maybe it's an evaluation-only dataset?
-            # Adjust as needed for IHC specific usage.
+
             test_index = self._filter_index(master_index, test_files)
             self.test_dataset = VSIDatasetLightning(index_data=test_index)
+
+VSIDataModule = HEHoldOutDataModule

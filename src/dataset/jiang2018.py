@@ -11,19 +11,15 @@ from torch.utils.data import Dataset, DataLoader
 
 import config
 
-# Figshare download links for Jiang 2018
 LINKS = {
-    # "Data_domain_part1.zip": "https://ndownloader.figshare.com/files/10616956",
-    # "Data_domain_part2.zip": "https://ndownloader.figshare.com/files/10616962",
+
     "Data_channel.zip": "https://ndownloader.figshare.com/files/10616965",
 }
-
 
 def _compute_brenner(image: np.ndarray) -> int:
     """Focus score for ground truth detection."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.int32)
     return int(np.sum((gray - np.roll(gray, -2, axis=1)) ** 2))
-
 
 class Jiang2018Dataset(Dataset):
     """Minimal dataset for pre-tiled Jiang 2018 segments with caching."""
@@ -43,7 +39,7 @@ class Jiang2018Dataset(Dataset):
             f"Scanning {root_dir} and computing focus scores (this may take a few minutes)..."
         )
         all_leaf_dirs = {p.parent for p in root_dir.rglob("Seg*.jpg")}
-        # Only include the requested domains/channels
+
         leaf_dirs = [
             p for p in all_leaf_dirs if "incoherent_RGBchannels" in p.as_posix()
         ]
@@ -53,7 +49,6 @@ class Jiang2018Dataset(Dataset):
             if not jpgs:
                 continue
 
-            # Group JPGs by Segment (e.g., "Seg1", "Seg2", ...)
             seg_groups = {}
             for f in jpgs:
                 seg_match = re.match(r"(Seg\d+)_", f.name)
@@ -69,7 +64,7 @@ class Jiang2018Dataset(Dataset):
                     match = re.search(r"defocus(-?\d+)", f.name)
                     if match:
                         abs_nm = float(match.group(1))
-                        # Read and compute score
+
                         img = cv2.imread(str(f))
                         if img is None:
                             continue
@@ -88,7 +83,6 @@ class Jiang2018Dataset(Dataset):
                         }
                     )
 
-        # Save to cache
         config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         with open(cache_path, "wb") as f:
             pickle.dump(self.samples, f)
@@ -104,13 +98,10 @@ class Jiang2018Dataset(Dataset):
         sample = self.samples[idx]
         img = cv2.imread(str(sample["path"]))
 
-        # Convert BGR to RGB for the model.
-        # For grayscale images (where B=G=R), this remains identical grayscale.
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         tensor = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
         return tensor, torch.tensor(sample["offset"], dtype=torch.float32)
-
 
 class Jiang2018DataModule(L.LightningDataModule):
     """Self-contained DataModule with auto-download and extraction."""
@@ -138,7 +129,6 @@ class Jiang2018DataModule(L.LightningDataModule):
                     ["curl", "-L", "-o", str(self.zip_dir / name), url], check=True
                 )
 
-        # Check if we need to extract (check for specific folders)
         expected_folders = ["incoherent_RGBchannels"]
         if all((self.raw_dir / d).exists() for d in expected_folders):
             print(

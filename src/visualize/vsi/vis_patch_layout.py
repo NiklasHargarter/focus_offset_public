@@ -5,9 +5,8 @@ import numpy as np
 import config
 from pathlib import Path
 
-
 def save_layout(slide, output_dir, patch_size):
-    ds = 8  # Consistent visualization downscale
+    ds = 8
     h, w = slide.height // ds, slide.width // ds
     vis_img = np.zeros((h, w), dtype=np.uint8)
 
@@ -20,7 +19,6 @@ def save_layout(slide, output_dir, patch_size):
     out_path = output_dir / f"{slide.name}_patch_layout.png"
     cv2.imwrite(str(out_path), vis_img)
     print(f"Saved: {out_path}")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

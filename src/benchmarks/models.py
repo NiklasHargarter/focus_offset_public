@@ -4,22 +4,19 @@ import lightning as L
 import sys
 from pathlib import Path
 
-# Add project root to path for imports
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.dataset.vsi_datamodule import VSIDataModule  # noqa: E402
-from src.models.lightning_module import FocusOffsetRegressor  # noqa: E402
-from src.models.architectures import (  # noqa: E402
+from src.dataset.vsi_datamodule import VSIDataModule
+from src.models.lightning_module import FocusOffsetRegressor
+from src.models.architectures import (
     ResNetFocusRegressor,
     ViTFocusRegressor,
     ConvNeXtFocusRegressor,
     EfficientNetFocusRegressor,
 )
 
-# Enable Tensor Cores globally if not handled by Trainer
 torch.set_float32_matmul_precision("medium")
-
 
 class BenchmarkCallback(L.Callback):
     def __init__(self, warmup_steps=100, total_steps=600):
@@ -51,11 +48,9 @@ class BenchmarkCallback(L.Callback):
         duration = self.end_time - self.start_time
         return (measured_batches * batch_size) / duration
 
-
 def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_size):
     print(f"\nBenchmarking architecture: {arch_name}")
 
-    # Instantiate the specific model subclass
     if arch_name == "resnet18":
         backbone = ResNetFocusRegressor(version="resnet18")
     elif arch_name == "resnet50":
@@ -101,9 +96,8 @@ def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_siz
     throughput = benchmark_callback.get_throughput(batch_size)
     total_time = benchmark_callback.end_time - benchmark_callback.start_time
 
-    # Estimate full epoch time
     steps_per_epoch = dataset_size / batch_size
-    # Time per batch
+
     time_per_batch = total_time / MEASURE_STEPS
     epoch_time_seconds = steps_per_epoch * time_per_batch
     epoch_time_min = epoch_time_seconds / 60
@@ -117,7 +111,6 @@ def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_siz
         "throughput": throughput,
         "epoch_time_min": epoch_time_min,
     }
-
 
 def main():
     L.seed_everything(42)
@@ -136,7 +129,6 @@ def main():
 
     results = []
 
-    # Benchmark a curated list of architectures
     arch_list = ["resnet18", "resnet50", "vit_b_16", "convnext_tiny", "efficientnet_b0"]
 
     for arch_name in arch_list:
@@ -161,7 +153,6 @@ def main():
         print(
             f"{r['arch']:<25} | {r['throughput']:<20.2f} | {r['epoch_time_min']:<25.2f}"
         )
-
 
 if __name__ == "__main__":
     main()

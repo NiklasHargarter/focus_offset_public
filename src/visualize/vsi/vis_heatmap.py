@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import config
 
-
 def save_heatmap(slide, output_dir, patch_size):
     ds = 8
     h, w = slide.height // ds, slide.width // ds
@@ -29,7 +28,6 @@ def save_heatmap(slide, output_dir, patch_size):
     plt.savefig(out_path, bbox_inches="tight", dpi=150)
     plt.close()
     print(f"Saved: {out_path}")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

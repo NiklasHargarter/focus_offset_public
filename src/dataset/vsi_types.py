@@ -3,14 +3,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from functools import cached_property
 
-
 class Patch(NamedTuple):
     """Spatial coordinate and optimal Z-level for a single patch."""
 
     x: int
     y: int
     z: int
-
 
 @dataclass
 class SlideMetadata:
@@ -31,7 +29,6 @@ class SlideMetadata:
     def total_samples(self) -> int:
         return self.patch_count * self.num_z
 
-
 @dataclass
 class PreprocessConfig:
     """Configuration used during preprocessing for traceability."""
@@ -42,7 +39,6 @@ class PreprocessConfig:
     min_tissue_coverage: float
     dataset_name: str
     binning_factor: int = 1
-
 
 @dataclass
 class MasterIndex:
@@ -55,7 +51,6 @@ class MasterIndex:
     @cached_property
     def total_samples(self) -> int:
         return sum(slide.total_samples for slide in self.file_registry)
-
 
 @dataclass
 class ProcessedIndex:

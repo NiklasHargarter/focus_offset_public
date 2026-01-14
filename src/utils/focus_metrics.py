@@ -1,11 +1,10 @@
 import cv2
 import numpy as np
 
-
 def compute_brenner_gradient(image: np.ndarray) -> float:
     """
     Standard Brenner Gradient focus metric.
-    
+
     Source: Brenner, J. F., et al. (1976). "An automated microscope for cytologic research."
     Formula: sum((I(x+2, y) - I(x, y))^2)
 
@@ -19,16 +18,11 @@ def compute_brenner_gradient(image: np.ndarray) -> float:
     else:
         gray = image
 
-    # Conversion to float64 is critical to handle differences properly 
-    # and to avoid overflow during summation of squared differences.
     gray = gray.astype(np.float64)
 
-    # Standard implementation: compare pixel with its neighbor 2 pixels away.
-    # We slice [:, 2:] and [:, :-2] to avoid wrap-around noise from np.roll.
     diff = gray[:, 2:] - gray[:, :-2]
-    
-    return float(np.sum(diff**2))
 
+    return float(np.sum(diff**2))
 
 def calculate_stability_metrics(patches: list, width: int, height: int, patch_size: int):
     """
@@ -51,7 +45,7 @@ def calculate_stability_metrics(patches: list, width: int, height: int, patch_si
     diff_v = np.abs(np.diff(z_grid, axis=0))
 
     tv = ((np.nanmean(diff_h) + np.nanmean(diff_v)) / 2 if diff_h.size > 0 and diff_v.size > 0 else 0.0)
-    
+
     outliers = np.count_nonzero(diff_h > 2) + np.count_nonzero(diff_v > 2)
     total_diffs = diff_h.size + diff_v.size
     outlier_ratio = outliers / total_diffs if total_diffs > 0 else 0.0

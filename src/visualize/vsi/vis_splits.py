@@ -6,7 +6,6 @@ import numpy as np
 import config
 from src.dataset.vsi_types import MasterIndex
 
-
 def analyze_splits(dataset_name, patch_size):
     master_index_path = config.get_master_index_path(
         dataset_name, patch_size=patch_size
@@ -24,13 +23,10 @@ def analyze_splits(dataset_name, patch_size):
     with open(split_path, "r") as f:
         splits = json.load(f)
 
-    # Map filename to metadata
     name_to_metadata = {m.name: m for m in master_index.file_registry}
 
-    # Analyze each split
     split_stats = {}
 
-    # Identify keys that look like splits (lists of filenames)
     split_keys = [
         k
         for k, v in splits.items()
@@ -58,7 +54,6 @@ def analyze_splits(dataset_name, patch_size):
             "slide_names": [m.name for m in slide_metadata],
         }
 
-    # Print summary
     print(f"\nAnalysis for dataset: {dataset_name} (patch_size={patch_size})")
     print("-" * 50)
     for key, stats in split_stats.items():
@@ -73,11 +68,9 @@ def analyze_splits(dataset_name, patch_size):
         )
         print("-" * 20)
 
-    # Visualization
     output_dir = config.VIS_DIR / f"p{patch_size}" / "splits" / dataset_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Slide and Sample Counts
     labels = list(split_stats.keys())
     slide_counts = [s["num_slides"] for s in split_stats.values()]
     sample_counts = [s["total_samples"] for s in split_stats.values()]
@@ -103,7 +96,6 @@ def analyze_splits(dataset_name, patch_size):
     plt.savefig(output_dir / "split_counts.png")
     plt.close()
 
-    # 2. Sample Distribution Boxplot
     plt.figure(figsize=(10, 6))
     plt.boxplot([s["sample_counts"] for s in split_stats.values()], labels=labels)
     plt.ylabel("Samples per Slide")
@@ -111,7 +103,6 @@ def analyze_splits(dataset_name, patch_size):
     plt.savefig(output_dir / "slide_size_dist.png")
     plt.close()
 
-    # 3. Cumulative Sample Count
     plt.figure(figsize=(12, 6))
     for key, stats in split_stats.items():
         sorted_counts = sorted(stats["sample_counts"], reverse=True)
@@ -133,7 +124,6 @@ def analyze_splits(dataset_name, patch_size):
 
     print(f"\nVisualizations saved to: {output_dir}")
 
-    # 4. Export Markdown Table
     md_content = f"# Split Analysis: {dataset_name} (p{patch_size})\n\n"
     md_content += "| Split | Slides | Samples (Total Z-stacks) | Patches (Spatial Locations) | Avg Samples/Slide |\n"
     md_content += "| :--- | :---: | :---: | :---: | :---: |\n"
@@ -149,7 +139,6 @@ def analyze_splits(dataset_name, patch_size):
     with open(md_path, "w") as f:
         f.write(md_content)
     print(f"Markdown table saved to: {md_path}")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

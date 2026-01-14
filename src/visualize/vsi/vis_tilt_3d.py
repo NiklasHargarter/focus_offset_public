@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import config
 
-
 def save_3d(slide, output_dir):
     X = np.array([p.x for p in slide.patches])
     Y = np.array([p.y for p in slide.patches])
@@ -24,7 +23,6 @@ def save_3d(slide, output_dir):
     plt.savefig(out_path, bbox_inches="tight", dpi=150)
     plt.close()
     print(f"Saved: {out_path}")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
