@@ -2,9 +2,10 @@ import zipfile
 import argparse
 import shutil
 from pathlib import Path
-import config
+from src import config
 from src.utils.io_utils import suppress_stderr
 import slideio
+
 
 def extract_zip(zip_path: Path, extract_target: Path) -> bool:
     """Extract zip file if VSI is missing."""
@@ -19,6 +20,7 @@ def extract_zip(zip_path: Path, extract_target: Path) -> bool:
         zip_ref.extractall(extract_target)
     return True
 
+
 def organize_vsi_files(extract_target: Path) -> None:
     """Move nested VSI files to root directory."""
     all_vsis = list(extract_target.rglob("*.vsi"))
@@ -28,6 +30,7 @@ def organize_vsi_files(extract_target: Path) -> None:
             if not dest.exists():
                 print(f"Moving nested VSI: {vsi_file} -> {dest}")
                 shutil.move(str(vsi_file), str(dest))
+
 
 def verify_vsi(vsi_path: Path) -> bool:
     """Verify VSI file readability."""
@@ -45,6 +48,7 @@ def verify_vsi(vsi_path: Path) -> bool:
         print(f"[FAIL] Integrity check failed for {vsi_path.name}: {e}")
         return False
 
+
 def cleanup_corrupt_vsi(vsi_path: Path, zip_source: Path, extract_target: Path) -> None:
     """Delete corrupt VSI files and source ZIPs."""
     vsi_path.unlink(missing_ok=True)
@@ -59,6 +63,7 @@ def cleanup_corrupt_vsi(vsi_path: Path, zip_source: Path, extract_target: Path) 
     if zip_path.exists():
         zip_path.unlink()
         print(f"       Deleted source zip: {zip_path.name}")
+
 
 def fix_zip_structure(dataset_name: str = config.DATASET_NAME) -> None:
     """Extract and verify all dataset files."""
@@ -85,6 +90,7 @@ def fix_zip_structure(dataset_name: str = config.DATASET_NAME) -> None:
             cleanup_corrupt_vsi(vsi_file, zip_source, extract_target)
 
     print(f"Fix/Extraction structure for {dataset_name} complete.")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -3,17 +3,14 @@ from torch.utils.data import DataLoader
 import torch
 import pickle
 import json
+import random
 from typing import Optional
 from pathlib import Path
 
-import config
+from src import config
 from src.dataset.vsi_dataset_lightning import VSIDatasetLightning
-from src.dataset.vsi_prep.download import download_dataset
-from src.dataset.vsi_prep.fix_zip import fix_zip_structure
-from src.dataset.vsi_prep.create_split import create_split
-from src.dataset.vsi_prep.preprocess import preprocess_dataset
+from src.dataset.vsi_types import MasterIndex, ProcessedIndex, PreprocessConfig
 
-from src.dataset.vsi_types import MasterIndex, ProcessedIndex
 
 class BaseVSIDataModule(L.LightningDataModule):
     """
@@ -27,11 +24,10 @@ class BaseVSIDataModule(L.LightningDataModule):
         batch_size: int,
         num_workers: int,
         patch_size: int,
-        downscale_factor: int,
+        stride: int,
         min_tissue_coverage: float,
-        focus_patch_size: int | None = None,
         split_ratio: float = 0.3,
-        binning_factor: int = 1,
+        force_preprocess: bool = False,
         cache_dir: str = "cache",
     ):
         super().__init__()
@@ -39,14 +35,10 @@ class BaseVSIDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.patch_size = patch_size
-        self.binning_factor = binning_factor
-        self.downscale_factor = downscale_factor
+        self.stride = stride
         self.min_tissue_coverage = min_tissue_coverage
-
-        if focus_patch_size is None:
-            focus_patch_size = patch_size * 10
-        self.focus_patch_size = focus_patch_size
         self.split_ratio = split_ratio
+        self.force_preprocess = force_preprocess
         self.cache_dir = Path(cache_dir)
 
         self.train_dataset: Optional[torch.utils.data.Dataset] = None
@@ -54,27 +46,59 @@ class BaseVSIDataModule(L.LightningDataModule):
         self.test_dataset: Optional[torch.utils.data.Dataset] = None
 
     def prepare_data(self):
-        """Preparation logic (download, unzip, split, preprocess) for the dataset."""
-        print(f"Ensuring data environment for {self.dataset_name} is ready...")
+        """
+        Quick check for required precomputed data.
+        For 200GB+ datasets, we decouple syncing from the training loop.
+        """
+        master_index_path = config.get_master_index_path(
+            self.dataset_name, patch_size=self.patch_size
+        )
+        split_path = config.get_split_path(self.dataset_name)
 
-        download_dataset(dataset_name=self.dataset_name)
-        fix_zip_structure(dataset_name=self.dataset_name)
-
-        preprocess_dataset(
-            dataset_name=self.dataset_name,
+        expected_config = PreprocessConfig(
             patch_size=self.patch_size,
-            binning_factor=self.binning_factor,
-            downscale_factor=self.downscale_factor,
+            stride=self.stride,
             min_tissue_coverage=self.min_tissue_coverage,
-            focus_patch_size=self.focus_patch_size,
-        )
-
-        create_split(
             dataset_name=self.dataset_name,
-            split_ratio=self.split_ratio,
         )
 
-        print(f"\nData preparation for {self.dataset_name} complete.")
+        missing = []
+        if not master_index_path.exists():
+            missing.append(f"Master Index: {master_index_path}")
+        else:
+            # Check if parameters match
+            with open(master_index_path, "rb") as f:
+                index: MasterIndex = pickle.load(f)
+            if index.config_state != expected_config:
+                missing.append(
+                    f"Master Index Configuration Mismatch!\n"
+                    f"  Expected: {expected_config}\n"
+                    f"  Found:    {index.config_state}"
+                )
+
+        if not split_path.exists():
+            missing.append(f"Split File: {split_path}")
+
+        if missing:
+            error_msg = "\n".join(missing)
+            print(
+                f"\n[ERROR] Required data for {self.dataset_name} is missing or outdated:\n{error_msg}"
+            )
+            print(
+                "\nTo resolve this, please run the standalone synchronization script:"
+            )
+            print(
+                f"  python src/dataset/vsi_prep/sync.py --dataset {self.dataset_name} "
+                f"--patch_size {self.patch_size} --stride {self.stride}"
+            )
+            print(
+                "\nNote: For 200GB+ datasets, this ensures a clean and traceable environment."
+            )
+            raise RuntimeError(
+                "Data preparation check failed. See log above for sync instructions."
+            )
+
+        print(f"Data environment for {self.dataset_name} (p{self.patch_size}) is OK.")
 
     def _filter_index(
         self, master_index: MasterIndex, files: list[str]
@@ -102,7 +126,6 @@ class BaseVSIDataModule(L.LightningDataModule):
             file_registry=filtered_registry,
             cumulative_indices=cumulative_indices,
             patch_size=master_index.patch_size,
-            binning_factor=master_index.config_state.binning_factor,
         )
 
     def _load_data_indices(self) -> tuple[MasterIndex, dict]:
@@ -165,6 +188,7 @@ class BaseVSIDataModule(L.LightningDataModule):
     def predict_dataloader(self):
         return self.test_dataloader()
 
+
 class HEHoldOutDataModule(BaseVSIDataModule):
     """HE DataModule with a simple static train/val split from the train pool."""
 
@@ -180,8 +204,6 @@ class HEHoldOutDataModule(BaseVSIDataModule):
 
         if stage == "fit" or stage is None:
             train_pool = splits["train_pool"]
-
-            import random
 
             random.seed(self.seed)
             random.shuffle(train_pool)
@@ -203,6 +225,7 @@ class HEHoldOutDataModule(BaseVSIDataModule):
         if stage == "test" or stage == "predict" or stage is None:
             test_index = self._filter_index(master_index, splits["test"])
             self.test_dataset = VSIDatasetLightning(index_data=test_index)
+
 
 class HEFoldDataModule(BaseVSIDataModule):
     """HE DataModule with K-fold cross-validation split from the train pool."""
@@ -254,6 +277,7 @@ class HEFoldDataModule(BaseVSIDataModule):
             test_index = self._filter_index(master_index, splits["test"])
             self.test_dataset = VSIDatasetLightning(index_data=test_index)
 
+
 class IHCDataModule(BaseVSIDataModule):
     """IHC DataModule, typically used for tests/evaluation only."""
 
@@ -276,5 +300,6 @@ class IHCDataModule(BaseVSIDataModule):
 
             test_index = self._filter_index(master_index, test_files)
             self.test_dataset = VSIDatasetLightning(index_data=test_index)
+
 
 VSIDataModule = HEHoldOutDataModule

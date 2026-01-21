@@ -2,6 +2,7 @@ import torch.nn as nn
 import torchvision.models as models
 from abc import ABC, abstractmethod
 
+
 class BaseFocusRegressor(nn.Module, ABC):
     """
     Abstract base class for all focus regressors.
@@ -14,6 +15,7 @@ class BaseFocusRegressor(nn.Module, ABC):
     @abstractmethod
     def forward(self, x):
         pass
+
 
 class ResNetFocusRegressor(BaseFocusRegressor):
     def __init__(self, version: str = "resnet18", pretrained: bool = True):
@@ -33,6 +35,7 @@ class ResNetFocusRegressor(BaseFocusRegressor):
     def forward(self, x):
         return self.model(x)
 
+
 class ViTFocusRegressor(BaseFocusRegressor):
     def __init__(self, version: str = "vit_b_16", pretrained: bool = True):
         super().__init__()
@@ -47,6 +50,7 @@ class ViTFocusRegressor(BaseFocusRegressor):
 
     def forward(self, x):
         return self.model(x)
+
 
 class ConvNeXtFocusRegressor(BaseFocusRegressor):
     def __init__(self, version: str = "tiny", pretrained: bool = True):
@@ -63,6 +67,7 @@ class ConvNeXtFocusRegressor(BaseFocusRegressor):
 
     def forward(self, x):
         return self.model(x)
+
 
 class EfficientNetFocusRegressor(BaseFocusRegressor):
     def __init__(self, version: str = "b0", pretrained: bool = True):

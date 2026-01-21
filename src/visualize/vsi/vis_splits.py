@@ -3,8 +3,9 @@ import pickle
 import json
 import matplotlib.pyplot as plt
 import numpy as np
-import config
+from src import config
 from src.dataset.vsi_types import MasterIndex
+
 
 def analyze_splits(dataset_name, patch_size):
     master_index_path = config.get_master_index_path(
@@ -139,6 +140,7 @@ def analyze_splits(dataset_name, patch_size):
     with open(md_path, "w") as f:
         f.write(md_content)
     print(f"Markdown table saved to: {md_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

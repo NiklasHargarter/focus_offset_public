@@ -3,7 +3,8 @@ import pickle
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
-import config
+from src import config
+
 
 def save_heatmap(slide, output_dir, patch_size):
     ds = 8
@@ -28,6 +29,7 @@ def save_heatmap(slide, output_dir, patch_size):
     plt.savefig(out_path, bbox_inches="tight", dpi=150)
     plt.close()
     print(f"Saved: {out_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

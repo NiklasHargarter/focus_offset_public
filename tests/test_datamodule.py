@@ -13,7 +13,7 @@ def test_datamodule_integration():
         num_workers=0,
         patch_size=224,
         downscale_factor=16,
-        min_tissue_coverage=0.05
+        min_tissue_coverage=0.05,
     )
 
     print("\n[Stage 1] Running prepare_data()...")

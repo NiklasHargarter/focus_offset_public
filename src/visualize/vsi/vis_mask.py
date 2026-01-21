@@ -2,12 +2,13 @@ import argparse
 from pathlib import Path
 import cv2
 import slideio
-import config
+from src import config
 from src.utils.io_utils import suppress_stderr
 from src.dataset.vsi_prep.preprocess import (
     select_best_focus_slice,
     generate_tissue_mask,
 )
+
 
 def save_mask(vsi_path: Path):
     output_dir = config.VIS_DIR / "vsi" / vsi_path.stem
@@ -28,6 +29,7 @@ def save_mask(vsi_path: Path):
     mask = generate_tissue_mask(best_gray)
     cv2.imwrite(str(out_path), mask)
     print(f"Saved: {out_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

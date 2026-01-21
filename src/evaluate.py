@@ -7,7 +7,7 @@ import yaml
 import lightning as L
 from lightning.pytorch.cli import LightningArgumentParser
 
-import config
+from src import config
 from src.dataset.vsi_datamodule import VSIDataModule
 from src.dataset.jiang2018 import Jiang2018DataModule
 from src.models.lightning_module import FocusOffsetRegressor
@@ -38,7 +38,7 @@ def evaluate(
     cfg_init = parser.instantiate_classes(model_cfg)
     model = cfg_init.model
 
-    print(f"🚀 Loading weights into {model.backbone.__class__.__name__}...")
+    print(f" Loading weights into {model.backbone.__class__.__name__}...")
     ckpt = torch.load(ckpt_path, map_location="cpu")
     model.load_state_dict(ckpt["state_dict"])
 
@@ -73,7 +73,7 @@ def evaluate(
             res = test_results[0]
             mae = res.get("test_mae_final", res.get("test_mae", 0.0))
             std = res.get("test_std", 0.0)
-            print(f"✅ MAE: {mae:.4f}")
+            print(f" MAE: {mae:.4f}")
 
             all_results.append(
                 {
@@ -90,7 +90,7 @@ def evaluate(
 
     with open(RESULTS_FILE, "w") as f:
         json.dump(all_results, f, indent=4)
-    print(f"\n✨ Results saved to {RESULTS_FILE}")
+    print(f"\n Results saved to {RESULTS_FILE}")
 
 
 if __name__ == "__main__":

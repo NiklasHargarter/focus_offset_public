@@ -4,18 +4,21 @@ from exact_sync.v1.configuration import Configuration
 from exact_sync.v1.api_client import ApiClient
 from exact_sync.v1.api.images_api import ImagesApi
 from exact_sync.v1.api.image_sets_api import ImageSetsApi
-import config
+from src import config
 
-def get_exact_image_list(dataset_name: str = config.DATASET_NAME) -> list[dict]:
+
+def get_exact_image_list(
+    dataset_name: str = config.DATASET_NAME, force: bool = False
+) -> list[dict]:
     """Fetch image list from EXACT and cache results."""
     cache_file = config.CACHE_DIR / f"exact_images_{dataset_name}.json"
 
-    if cache_file.exists():
+    if not force and cache_file.exists():
         with open(cache_file, "r") as f:
             return json.load(f)
 
     configuration = Configuration()
-    configuration.username = "niklas.hargarter"
+    configuration.username = os.environ.get("EXACT_USERNAME", "niklas.hargarter")
     configuration.password = os.environ.get("EXACT_PASSWORD")
     if configuration.password is None:
         raise ValueError("Environment variable 'EXACT_PASSWORD' is not set.")

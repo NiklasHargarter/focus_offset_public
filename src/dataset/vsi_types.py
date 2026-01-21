@@ -1,7 +1,7 @@
 from typing import NamedTuple
 from dataclasses import dataclass
 from pathlib import Path
-from functools import cached_property
+
 
 class Patch(NamedTuple):
     """Spatial coordinate and optimal Z-level for a single patch."""
@@ -9,6 +9,7 @@ class Patch(NamedTuple):
     x: int
     y: int
     z: int
+
 
 @dataclass
 class SlideMetadata:
@@ -21,24 +22,24 @@ class SlideMetadata:
     num_z: int
     patches: list[Patch]
 
-    @cached_property
+    @property
     def patch_count(self) -> int:
         return len(self.patches)
 
-    @cached_property
+    @property
     def total_samples(self) -> int:
         return self.patch_count * self.num_z
+
 
 @dataclass
 class PreprocessConfig:
     """Configuration used during preprocessing for traceability."""
 
-    patch_size: int
-    focus_patch_size: int
-    downscale_factor: int
+    patch_size: int  # Output image size (e.g. 224)
+    stride: int  # Step size on the slide
     min_tissue_coverage: float
     dataset_name: str
-    binning_factor: int = 1
+
 
 @dataclass
 class MasterIndex:
@@ -48,9 +49,10 @@ class MasterIndex:
     patch_size: int
     config_state: PreprocessConfig
 
-    @cached_property
+    @property
     def total_samples(self) -> int:
         return sum(slide.total_samples for slide in self.file_registry)
+
 
 @dataclass
 class ProcessedIndex:
@@ -59,8 +61,7 @@ class ProcessedIndex:
     file_registry: list[SlideMetadata]
     cumulative_indices: list[int]
     patch_size: int
-    binning_factor: int = 1
 
-    @cached_property
+    @property
     def total_samples(self) -> int:
         return sum(slide.total_samples for slide in self.file_registry)

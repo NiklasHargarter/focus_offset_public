@@ -1,10 +1,11 @@
 import random
 import argparse
 import json
-import config
+from src import config
 import pickle
 
 from src.dataset.vsi_types import MasterIndex
+
 
 def create_split(
     dataset_name: str,
@@ -48,7 +49,6 @@ def create_split(
     current_test_count = 0
 
     for slide in slides:
-
         if current_test_count < target_test_count:
             test_files.append(slide["name"])
             current_test_count += slide["count"]
@@ -74,6 +74,7 @@ def create_split(
         json.dump(split_data, f, indent=4)
 
     print(f"Saved splits to {split_file}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

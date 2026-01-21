@@ -1,11 +1,7 @@
+import traceback
 import time
 import torch
 import lightning as L
-import sys
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.append(str(PROJECT_ROOT))
 
 from src.dataset.vsi_datamodule import VSIDataModule
 from src.models.lightning_module import FocusOffsetRegressor
@@ -17,6 +13,7 @@ from src.models.architectures import (
 )
 
 torch.set_float32_matmul_precision("medium")
+
 
 class BenchmarkCallback(L.Callback):
     def __init__(self, warmup_steps=100, total_steps=600):
@@ -47,6 +44,7 @@ class BenchmarkCallback(L.Callback):
             return 0.0
         duration = self.end_time - self.start_time
         return (measured_batches * batch_size) / duration
+
 
 def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_size):
     print(f"\nBenchmarking architecture: {arch_name}")
@@ -112,6 +110,7 @@ def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_siz
         "epoch_time_min": epoch_time_min,
     }
 
+
 def main():
     L.seed_everything(42)
 
@@ -140,8 +139,6 @@ def main():
                 results.append(res)
         except Exception as e:
             print(f"Skipping {arch_name} due to error: {e}")
-            import traceback
-
             traceback.print_exc()
 
     print("\n\n=== LIGHTNING BENCHMARK SUMMARY (AMP 16) ===")
@@ -153,6 +150,7 @@ def main():
         print(
             f"{r['arch']:<25} | {r['throughput']:<20.2f} | {r['epoch_time_min']:<25.2f}"
         )
+
 
 if __name__ == "__main__":
     main()

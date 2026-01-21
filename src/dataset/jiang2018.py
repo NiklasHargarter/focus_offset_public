@@ -9,17 +9,18 @@ from pathlib import Path
 from typing import Optional
 from torch.utils.data import Dataset, DataLoader
 
-import config
+from src import config
 
 LINKS = {
-
     "Data_channel.zip": "https://ndownloader.figshare.com/files/10616965",
 }
+
 
 def _compute_brenner(image: np.ndarray) -> int:
     """Focus score for ground truth detection."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.int32)
     return int(np.sum((gray - np.roll(gray, -2, axis=1)) ** 2))
+
 
 class Jiang2018Dataset(Dataset):
     """Minimal dataset for pre-tiled Jiang 2018 segments with caching."""
@@ -102,6 +103,7 @@ class Jiang2018Dataset(Dataset):
 
         tensor = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
         return tensor, torch.tensor(sample["offset"], dtype=torch.float32)
+
 
 class Jiang2018DataModule(L.LightningDataModule):
     """Self-contained DataModule with auto-download and extraction."""

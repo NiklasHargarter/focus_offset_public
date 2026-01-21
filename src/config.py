@@ -1,6 +1,10 @@
+import os
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Data Root: Defaults to Home, but can be overridden via environment variable
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", Path.home()))
 
 # Directory Constants
 VIS_DIR = PROJECT_ROOT / "visualizations"
@@ -11,7 +15,7 @@ PATCH_SIZE = 224
 
 
 def get_vsi_raw_dir(dataset_name: str = DATASET_NAME) -> Path:
-    return Path(f"/home/niklas/{dataset_name}/raws")
+    return DATA_ROOT / dataset_name / "raws"
 
 
 def get_vis_dir(dataset_name: str = DATASET_NAME, patch_size: int = PATCH_SIZE) -> Path:
@@ -22,7 +26,7 @@ def get_vis_dir(dataset_name: str = DATASET_NAME, patch_size: int = PATCH_SIZE) 
 
 
 def get_vsi_zip_dir(dataset_name: str = DATASET_NAME) -> Path:
-    return Path(f"/home/niklas/{dataset_name}/zips")
+    return DATA_ROOT / dataset_name / "zips"
 
 
 def get_split_path(dataset_name: str = DATASET_NAME) -> Path:

@@ -3,8 +3,9 @@ from pathlib import Path
 import cv2
 import slideio
 import matplotlib.pyplot as plt
-import config
+from src import config
 from src.utils.io_utils import suppress_stderr
+
 
 def save_z_stack(vsi_path: Path, output_dir: Path, patch_size: int):
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -43,6 +44,7 @@ def save_z_stack(vsi_path: Path, output_dir: Path, patch_size: int):
     plt.savefig(out_path, dpi=100)
     plt.close()
     print(f"Saved: {out_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

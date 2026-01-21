@@ -8,6 +8,7 @@ from src.utils.io_utils import suppress_stderr
 
 from src.dataset.vsi_types import ProcessedIndex, SlideMetadata
 
+
 class VSIDatasetLightning(Dataset):
     """
     State-of-the-art Dataset for VSI patches.
@@ -32,7 +33,12 @@ class VSIDatasetLightning(Dataset):
         self._owner_pid = None
 
     def _get_scene(self, vsi_path: str):
-        """Lazy initialization of slide handles, unique to each worker process."""
+        """
+        Lazy initialization of slide handles, unique to each worker process.
+        VSI handles (via slideio) are not multi-processing safe. We track the PID
+        to ensure that if a worker process is forked/spawned, it creates its own
+        slide handles rather than inheriting (and corrupting) parent handles.
+        """
         current_pid = os.getpid()
 
         if self._slides is None or self._owner_pid != current_pid:
@@ -56,6 +62,11 @@ class VSIDatasetLightning(Dataset):
         return self.total_samples
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Maps a global linear index to a specific (Slide, Patch, Z-slice) triplet.
+        Calculates the focus offset in microns relative to the precomputed 'sharpest' Z.
+        """
+        # Find which slide this index belongs to using binary search on cumulative counts
         file_idx = bisect.bisect_right(self.cumulative_indices, idx)
 
         if file_idx == 0:
@@ -68,6 +79,7 @@ class VSIDatasetLightning(Dataset):
         patches = file_meta.patches
         num_z = file_meta.num_z
 
+        # Within the slide, find the patch and the specific Z-slice
         patch_idx = local_idx // num_z
         z_level = local_idx % num_z
         patch = patches[patch_idx]
@@ -75,19 +87,18 @@ class VSIDatasetLightning(Dataset):
 
         scene = self._get_scene(str(vsi_path))
 
+        # Calculate focus offset in microns (Target for the regression model)
         z_res_microns = scene.z_resolution * 1e6
         z_offset = float(best_z - z_level) * z_res_microns
-
-        read_patch_size = self.patch_size * self.index.binning_factor
 
         rect = (
             x,
             y,
-            read_patch_size,
-            read_patch_size,
+            self.patch_size,
+            self.patch_size,
         )
         try:
-
+            # Efficient single-slice read from VSI
             block = scene.read_block(
                 rect=rect,
                 size=(self.patch_size, self.patch_size),

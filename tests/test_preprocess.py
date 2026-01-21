@@ -15,7 +15,7 @@ class TestImageMetrics(unittest.TestCase):
             downscale_factor=10,
             min_tissue_coverage=0.05,
             dataset_name="test_dataset",
-            focus_patch_size=1000
+            focus_patch_size=1000,
         )
         self.processor = SlidePreprocessor(self.config)
 
@@ -32,16 +32,16 @@ class TestImageMetrics(unittest.TestCase):
         # Expected Sum of Squared Diff (Shift 2):
         # Gray conversion usually maintains values if channels are equal, but here BGR=(0,0,0) -> 0, etc.
         # Let's use grayscale directly to avoid OpenCV conversion ambiguity in test setup if possible,
-        # but the method takes BGR. 
+        # but the method takes BGR.
         # cv2.cvtColor(BGR) where B=G=R sends the same value to Y.
         # So 10 -> 10, 20 -> 20.
-        
+
         # Row: [10, 10, 20, 20, 10, 10]
         # Shifted (-2): [20, 20, 10, 10, 10, 10] (wrapped)
         # Diff: [-10, -10, 10, 10, 0, 0]
         # Squared: [100, 100, 100, 100, 0, 0]
         # Sum: 400
-        
+
         score = self.processor._compute_focus_score(img)
         self.assertEqual(score, 400)
 
@@ -63,7 +63,7 @@ class TestMaskProcessing(unittest.TestCase):
             downscale_factor=self.downscale,
             min_tissue_coverage=0.05,
             dataset_name="test_dataset",
-            focus_patch_size=1000
+            focus_patch_size=1000,
         )
         self.processor = SlidePreprocessor(self.config)
         # Mock dimensions on the processor since it normally sets them from slide metadata
@@ -79,12 +79,12 @@ class TestMaskProcessing(unittest.TestCase):
         # y: 0-100 -> ds 0-10
         # x: 0-100 -> ds 0-10
         mask[0:10, 0:10] = 255
-        
+
         # 10% coverage at (200, 0) -> ds (20,0) to (30,10)
         # This zone has 10x10=100 pixels. 10% is 10 pixels.
         # Let's fill 10 pixels in this block.
         mask[0, 20:30] = 255
-        
+
         # 0% coverage at (400,0) -> ds (40,0) to (50,10)
         # Leave 0
 
@@ -102,7 +102,7 @@ class TestFocusSelection(unittest.TestCase):
             downscale_factor=10,
             min_tissue_coverage=0.05,
             dataset_name="test_dataset",
-            focus_patch_size=1000
+            focus_patch_size=1000,
         )
         self.processor = SlidePreprocessor(self.config)
 
@@ -114,20 +114,20 @@ class TestFocusSelection(unittest.TestCase):
         # Mock the slideio scene
         mock_scene = MagicMock()
         mock_scene.size = (100, 100)
-        
+
         d_w, d_h = 10, 10
         num_z = 3
 
         # Create dummy images (BGR)
         # Gray: 0 -> Variance 0 -> Score 0
-        img_blurry = np.zeros((10, 10, 3), dtype=np.uint8) 
+        img_blurry = np.zeros((10, 10, 3), dtype=np.uint8)
 
         # High variance image
         img_sharp = np.zeros((10, 10, 3), dtype=np.uint8)
         # Random noise or checkerboard used to create high Laplacian variance
         for i in range(10):
             for j in range(10):
-                if (i+j) % 2 == 0:
+                if (i + j) % 2 == 0:
                     img_sharp[i, j] = 255
 
         # Define side effect to return distinct images based on slices

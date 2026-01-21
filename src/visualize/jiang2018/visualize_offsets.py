@@ -5,11 +5,9 @@ import re
 import sys
 import random
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-sys.path.append(str(PROJECT_ROOT))
-
-import config
+from src import config
 from src.dataset.jiang2018 import Jiang2018Dataset
+
 
 def visualize_segment(samples: list, output_path: Path, stack_title: str):
     """
@@ -83,8 +81,8 @@ def visualize_segment(samples: list, output_path: Path, stack_title: str):
     plt.close()
     print(f"Visualization saved to {output_path}")
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     raw_dir = config.get_vsi_raw_dir("Jiang2018")
     dataset = Jiang2018Dataset(raw_dir)
 

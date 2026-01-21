@@ -5,7 +5,7 @@ This document explains the high-performance pipeline designed to process, filter
 ## 1. Directory Structure
 The system uses a metadata-driven approach where data preparation is decoupled from dataset consumption.
 
-1.  **Raw Data**: All VSI files reside in dataset-specific directories (e.g., `/home/niklas/ZStack_HE/raws`).
+1.  **Raw Data**: All VSI files reside in dataset-specific directories (e.g., `<DATA_ROOT>/ZStack_HE/raws`).
 2.  **Master Index**: Preprocessing converts all raw slides into a single holistic `master_index_{dataset}.pkl`.
 3.  **Primary Split**: A `splits_{dataset}.json` defines the balanced **test** set and the **train_pool** (everyone else).
 4.  **Specialized DataModules**: DataModules filter the master index at runtime to create specific folds or hold-out splits.

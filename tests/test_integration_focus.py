@@ -7,6 +7,7 @@ import config
 from src.dataset.vsi_datamodule import HEHoldOutDataModule
 from src.utils.io_utils import suppress_stderr
 
+
 def compute_brenner_gradient(image: np.ndarray) -> float:
     """Compute focus score using Brenner Gradient (local helper)."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -25,17 +26,17 @@ class TestIntegrationFocus(unittest.TestCase):
             num_workers=0,
             patch_size=224,
             downscale_factor=16,
-            min_tissue_coverage=0.05
+            min_tissue_coverage=0.05,
         )
 
         try:
-             dm.setup(stage="fit")
+            dm.setup(stage="fit")
         except Exception as e:
-             self.skipTest(f"DataModule setup failed (likely missing data): {e}")
+            self.skipTest(f"DataModule setup failed (likely missing data): {e}")
 
         dataset = dm.train_dataset
         if dataset is None:
-             self.skipTest("Train dataset is None after setup.")
+            self.skipTest("Train dataset is None after setup.")
 
         # Access file registry
         registry = dataset.file_registry
