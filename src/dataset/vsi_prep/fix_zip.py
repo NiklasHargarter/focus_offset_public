@@ -15,10 +15,13 @@ def extract_zip(zip_path: Path, extract_target: Path) -> bool:
     if expected_vsi_path.exists():
         return False
 
-    print(f"Extracting {zip_path.name}...")
-    with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(extract_target)
-    return True
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(extract_target)
+        return True
+    except Exception as e:
+        print(f"[FAIL] Could not extract {zip_path.name}: {e}")
+        return False
 
 
 def organize_vsi_files(extract_target: Path) -> None:

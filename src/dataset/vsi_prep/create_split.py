@@ -2,9 +2,8 @@ import random
 import argparse
 import json
 from src import config
-import pickle
 
-from src.dataset.vsi_types import MasterIndex
+from src.dataset.vsi_prep.preprocess import load_master_index
 
 
 def create_split(
@@ -15,20 +14,18 @@ def create_split(
 ) -> None:
     """Generate image splits (test and train_pool) from master index."""
     split_file = config.get_split_path(dataset_name)
-    master_index_path = config.get_master_index_path(dataset_name)
 
     if split_file.exists() and not force:
         print(f"Split file {split_file} already exists. Skipping generation.")
         return
 
-    if not master_index_path.exists():
+    master_index = load_master_index(dataset_name, config.PATCH_SIZE)
+
+    if master_index is None:
         print(
-            f"Error: Master index {master_index_path} not found. Run preprocessing first."
+            f"Error: Master index/manifest for {dataset_name} not found. Run preprocessing first."
         )
         return
-
-    with open(master_index_path, "rb") as f:
-        master_index: MasterIndex = pickle.load(f)
 
     file_registry = master_index.file_registry
     slides = []

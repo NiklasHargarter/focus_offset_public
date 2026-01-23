@@ -14,8 +14,9 @@ from src.utils.io_utils import suppress_stderr
 
 from src import config
 from src.dataset.vsi_types import SlideMetadata, Patch, PreprocessConfig, MasterIndex
+import json
+from dataclasses import asdict
 from src.utils.focus_metrics import compute_brenner_gradient
-from src.utils.exact_utils import get_exact_image_list
 
 MASK_DOWNSCALE = 16
 
@@ -178,9 +179,80 @@ class SlidePreprocessor:
                     f"  [{vsi_path.name}] Stage 3: {processed_blocks}/{total_blocks} blocks..."
                 )
 
-        return SlideMetadata(
-            vsi_path.name, vsi_path, width, height, scene.num_z_slices, final_patches
+
+def load_master_index(dataset_name: str, patch_size: int) -> MasterIndex | None:
+    """Helper to load all individual slide indices and the manifest configuration."""
+    manifest_path = config.get_master_index_path(dataset_name, patch_size)
+    indices_dir = config.get_slide_index_dir(dataset_name, patch_size)
+
+    if not manifest_path.exists():
+        return None
+
+    try:
+        with open(manifest_path, "rb") as f:
+            manifest_data = pickle.load(f)
+
+        # Load all slide pickles from the indices directory
+        slide_metadatas = []
+        for pkl_path in sorted(indices_dir.glob("*.pkl")):
+            with open(pkl_path, "rb") as f:
+                slide_metadatas.append(pickle.load(f))
+
+        return MasterIndex(
+            file_registry=slide_metadatas,
+            patch_size=patch_size,
+            config_state=manifest_data["config_state"],
         )
+    except Exception as e:
+        print(f"Error loading indices: {e}")
+        return None
+
+
+def save_slide_json(result: SlideMetadata, pkl_path: Path):
+    """Save a compact JSON sidecar for a slide index."""
+    json_path = pkl_path.with_suffix(".json")
+    data = {
+        "name": result.name,
+        "width": result.width,
+        "height": result.height,
+        "num_z": result.num_z,
+        "patch_count": result.patch_count,
+        "patches": [[p.x, p.y, p.z] for p in result.patches],
+    }
+    with open(json_path, "w") as f:
+        json.dump(data, f)
+
+
+def save_master_index_json(
+    master_index: MasterIndex, dataset_name: str, patch_size: int
+) -> None:
+    """Export the MasterIndex to a JSON file for shareability."""
+    json_path = config.get_master_index_path(dataset_name, patch_size).with_suffix(
+        ".json"
+    )
+
+    data = {
+        "dataset_name": dataset_name,
+        "patch_size": patch_size,
+        "config": asdict(master_index.config_state),
+        "slides": [],
+    }
+
+    for slide in master_index.file_registry:
+        data["slides"].append(
+            {
+                "name": slide.name,
+                "width": slide.width,
+                "height": slide.height,
+                "num_z": slide.num_z,
+                "patch_count": slide.patch_count,
+                "patches": [[p.x, p.y, p.z] for p in slide.patches],
+            }
+        )
+
+    with open(json_path, "w") as f:
+        json.dump(data, f)
+    print(f"  [EXPORT] Consolidated JSON index saved to {json_path}")
 
 
 def preprocess_dataset(
@@ -192,7 +264,10 @@ def preprocess_dataset(
     workers: int | None = None,
     force: bool = False,
 ) -> None:
-    config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    """Preprocess all slides in a dataset into a MasterIndex."""
+    raw_dir = config.get_vsi_raw_dir(dataset_name)
+    manifest_path = config.get_master_index_path(dataset_name, patch_size)
+    indices_dir = config.get_slide_index_dir(dataset_name, patch_size)
     workers = workers or os.cpu_count()
 
     current_config = PreprocessConfig(
@@ -202,84 +277,74 @@ def preprocess_dataset(
         dataset_name=dataset_name,
     )
 
-    output_path = config.get_master_index_path(dataset_name, patch_size)
-
+    # 1. Check for existing indices
     existing_results = []
-    if output_path.exists() and not force:
-        try:
-            with open(output_path, "rb") as f:
-                existing: MasterIndex = pickle.load(f)
+    processed_names = set()
 
-            # Check if config matches
-            if existing.config_state == current_config:
-                existing_results = existing.file_registry
-                print(
-                    f"Found existing index for {dataset_name} with {len(existing_results)} slides."
-                )
-            else:
-                print(
-                    f"Configuration changed for {dataset_name}. Full re-preprocess required."
-                )
-        except Exception as e:
-            print(f"Failed to load existing index: {e}. Starting fresh.")
+    # Load manifest config
+    if manifest_path.exists() and not force:
+        with open(manifest_path, "rb") as f:
+            manifest_data = pickle.load(f)
 
-    images_meta = get_exact_image_list(dataset_name=dataset_name, force=force)
-    raw_dir = config.get_vsi_raw_dir(dataset_name)
-    all_files = sorted(
-        [
-            raw_dir / img["name"]
-            for img in images_meta
-            if (raw_dir / img["name"]).exists()
-        ]
-    )
+        if manifest_data["config_state"] != current_config:
+            print(f"Config mismatch! Existing config: {manifest_data['config_state']}")
+            print("Delete the index directory or use --force to reprocess.")
+            return
 
-    # Filter out files already in existing_results
-    processed_names = {r.name for r in existing_results}
+        # Load all individual slide pickles
+        for pkl_path in sorted(indices_dir.glob("*.pkl")):
+            with open(pkl_path, "rb") as f:
+                res = pickle.load(f)
+                existing_results.append(res)
+                processed_names.add(res.name)
+
+        print(f"Found {len(existing_results)} already processed slides.")
+
+    # 2. Identify remaining work
+    all_files = sorted(list(raw_dir.glob("*.vsi")))
+    if limit:
+        all_files = all_files[:limit]
+
     files_to_process = [f for f in all_files if f.name not in processed_names]
 
-    if limit is not None:
-        files_to_process = files_to_process[:limit]
-
-    if not files_to_process:
-        if existing_results:
-            print(f"All {len(all_files)} files already processed. Nothing to do.")
-            return
-        else:
-            print("No files found to process. Aborting.")
-            return
-
-    print(f"\n=== Preprocessing: {dataset_name} ===")
-    print(f"  Configuration: Stride={stride}px, Patch={patch_size}px")
-    print("  Strategy: Optimal Master Blocks (1x Resolution)")
+    print(f"Preprocessing {dataset_name} (Stride={stride}, Patch={patch_size})")
     print(
-        f"  Status: {len(existing_results)} already processed, {len(files_to_process)} new files to process."
+        f"Total: {len(all_files)} | Skipping: {len(processed_names)} | Remaining: {len(files_to_process)}"
     )
 
-    new_results = []
+    # Save initial manifest to mark the start/config
+    with open(manifest_path, "wb") as f:
+        pickle.dump({"config_state": current_config}, f)
+
     if files_to_process:
+        # Use a Pool to process slides
         with multiprocessing.Pool(workers) as pool:
             process_func = partial(process_slide_wrapper, config=current_config)
-            new_results = pool.map(process_func, files_to_process)
 
-    new_results = [r for r in new_results if r is not None]
+            # Use imap to save results as they come in (atomic saving)
+            for result in pool.imap_unordered(process_func, files_to_process):
+                if result is not None:
+                    # Save individual slide index (Pickle for perf, JSON for Git)
+                    slide_pkl_path = indices_dir / f"{result.name}.pkl"
+                    with open(slide_pkl_path, "wb") as f:
+                        pickle.dump(result, f)
 
-    # Combine old and new
-    combined_results = existing_results + new_results
+                    save_slide_json(result, slide_pkl_path)
 
-    # Sort by name for consistency
-    combined_results.sort(key=lambda x: x.name)
+                    existing_results.append(result)
+                    print(f"  [SAVE] {result.name} saved (.pkl + .json)")
 
-    final_index = MasterIndex(
-        file_registry=combined_results,
-        patch_size=patch_size,
-        config_state=current_config,
-    )
-
-    with open(output_path, "wb") as f:
-        pickle.dump(final_index, f)
-    print(
-        f"Final Count: {len(combined_results)} slides, {final_index.total_samples} patches"
-    )
+    # 3. Final Consolidation & Master JSON Export
+    if existing_results:
+        master_index = MasterIndex(
+            file_registry=sorted(existing_results, key=lambda x: x.name),
+            patch_size=patch_size,
+            config_state=current_config,
+        )
+        print(f"Completed! Total Patches: {master_index.total_samples // 27:,}")
+        save_master_index_json(master_index, dataset_name, patch_size)
+    else:
+        print("No slides were processed or found.")
 
 
 def process_slide_wrapper(vsi_path: Path, config: PreprocessConfig):

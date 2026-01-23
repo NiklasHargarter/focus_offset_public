@@ -10,6 +10,7 @@ from pathlib import Path
 from src import config
 from src.dataset.vsi_dataset_lightning import VSIDatasetLightning
 from src.dataset.vsi_types import MasterIndex, ProcessedIndex, PreprocessConfig
+from src.dataset.vsi_prep.preprocess import load_master_index
 
 
 class BaseVSIDataModule(L.LightningDataModule):
@@ -48,12 +49,11 @@ class BaseVSIDataModule(L.LightningDataModule):
     def prepare_data(self):
         """
         Quick check for required precomputed data.
-        For 200GB+ datasets, we decouple syncing from the training loop.
+        For 800GB+ datasets, we decouple syncing from the training loop.
         """
         master_index_path = config.get_master_index_path(
             self.dataset_name, patch_size=self.patch_size
         )
-        split_path = config.get_split_path(self.dataset_name)
 
         expected_config = PreprocessConfig(
             patch_size=self.patch_size,
@@ -64,20 +64,23 @@ class BaseVSIDataModule(L.LightningDataModule):
 
         missing = []
         if not master_index_path.exists():
-            missing.append(f"Master Index: {master_index_path}")
+            missing.append(f"Master Manifest: {master_index_path}")
         else:
-            # Check if parameters match
+            # Check manifest config
             with open(master_index_path, "rb") as f:
-                index: MasterIndex = pickle.load(f)
-            if index.config_state != expected_config:
+                manifest_data = pickle.load(f)
+
+            if manifest_data["config_state"] != expected_config:
                 missing.append(
                     f"Master Index Configuration Mismatch!\n"
                     f"  Expected: {expected_config}\n"
-                    f"  Found:    {index.config_state}"
+                    f"  Found:    {manifest_data['config_state']}"
                 )
 
-        if not split_path.exists():
-            missing.append(f"Split File: {split_path}")
+        # Also check if any slide indices exist
+        indices_dir = config.get_slide_index_dir(self.dataset_name, self.patch_size)
+        if not any(indices_dir.glob("*.pkl")):
+            missing.append(f"No individual slide indices found in {indices_dir}")
 
         if missing:
             error_msg = "\n".join(missing)
@@ -129,18 +132,14 @@ class BaseVSIDataModule(L.LightningDataModule):
         )
 
     def _load_data_indices(self) -> tuple[MasterIndex, dict]:
-        master_index_path = config.get_master_index_path(
-            self.dataset_name, patch_size=self.patch_size
-        )
+        master_index = load_master_index(self.dataset_name, self.patch_size)
         split_path = config.get_split_path(self.dataset_name)
 
-        if not master_index_path.exists() or not split_path.exists():
+        if master_index is None or not split_path.exists():
             raise RuntimeError(
                 f"Missing data for {self.dataset_name}. Run prepare_data first."
             )
 
-        with open(master_index_path, "rb") as f:
-            master_index: MasterIndex = pickle.load(f)
         with open(split_path, "r") as f:
             splits = json.load(f)
 

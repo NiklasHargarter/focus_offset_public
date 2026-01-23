@@ -45,7 +45,16 @@ def get_index_path(
 def get_master_index_path(
     dataset_name: str = DATASET_NAME, patch_size: int = PATCH_SIZE
 ) -> Path:
-    """Path to the master index file for all slides in a dataset."""
-    path = CACHE_DIR / f"p{patch_size}" / f"master_index_{dataset_name}.pkl"
+    """Path to the master manifest file for a dataset."""
+    path = CACHE_DIR / f"p{patch_size}" / dataset_name / "manifest.pkl"
     path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_slide_index_dir(
+    dataset_name: str = DATASET_NAME, patch_size: int = PATCH_SIZE
+) -> Path:
+    """Directory for individual slide metadata pickles."""
+    path = CACHE_DIR / f"p{patch_size}" / dataset_name / "indices"
+    path.mkdir(parents=True, exist_ok=True)
     return path
