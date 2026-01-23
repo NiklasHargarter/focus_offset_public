@@ -1,0 +1,50 @@
+# Default configuration for Focus Offset Regression
+# Includes best practice parameters and ConvNeXtV2 Backbone
+
+fit:
+  trainer:
+    max_epochs: 100
+    precision: 16-mixed
+    devices: 1
+    accelerator: auto
+    callbacks:
+      - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+        init_args:
+          monitor: val_loss
+          mode: min
+          save_top_k: 1
+          filename: 'best_model-{epoch:02d}-{val_loss:.4f}'
+      - class_path: lightning.pytorch.callbacks.EarlyStopping
+        init_args:
+          monitor: val_loss
+          patience: 10
+          mode: min
+      - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+        init_args:
+          logging_interval: step
+    logger:
+      - class_path: lightning.pytorch.loggers.TensorBoardLogger
+        init_args:
+          save_dir: logs
+          name: focus_convnextv2
+
+  model:
+    learning_rate: 1e-4
+    weight_decay: 0.05
+    backbone:
+      class_path: src.models.architectures.ConvNeXtV2FocusRegressor
+      init_args:
+        version: tiny
+        pretrained: true
+
+  data:
+    class_path: src.dataset.vsi_datamodule.VSIDataModule
+    init_args:
+      dataset_name: ZStack_HE
+      batch_size: 128
+      num_workers: 16
+      patch_size: 224
+      stride: 448
+      downsample_factor: 2
+      min_tissue_coverage: 0.05
+      split_ratio: 0.3

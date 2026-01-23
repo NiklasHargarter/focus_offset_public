@@ -1,3 +1,4 @@
+import json
 import traceback
 import time
 import torch
@@ -10,6 +11,7 @@ from src.models.architectures import (
     ViTFocusRegressor,
     ConvNeXtFocusRegressor,
     EfficientNetFocusRegressor,
+    ConvNeXtV2FocusRegressor,
 )
 
 torch.set_float32_matmul_precision("medium")
@@ -46,7 +48,9 @@ class BenchmarkCallback(L.Callback):
         return (measured_batches * batch_size) / duration
 
 
-def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_size):
+def benchmark_architecture(
+    arch_name: str, train_loader, val_loader, dataset_size, batch_size
+):
     print(f"\nBenchmarking architecture: {arch_name}")
 
     if arch_name == "resnet18":
@@ -59,6 +63,8 @@ def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_siz
         backbone = ConvNeXtFocusRegressor(version="tiny")
     elif arch_name == "efficientnet_b0":
         backbone = EfficientNetFocusRegressor(version="b0")
+    elif arch_name == "convnext_v2_tiny":
+        backbone = ConvNeXtV2FocusRegressor(version="tiny")
     else:
         print(f"Unknown architecture {arch_name}, skipping.")
         return None
@@ -76,7 +82,7 @@ def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_siz
     benchmark_trainer = L.Trainer(
         max_epochs=1,
         limit_train_batches=TOTAL_STEPS,
-        limit_val_batches=0,
+        limit_val_batches=1,
         accelerator="auto",
         devices=1,
         precision="16-mixed",
@@ -89,7 +95,7 @@ def benchmark_architecture(arch_name: str, train_loader, dataset_size, batch_siz
 
     print(f"  Running benchmark ({WARMUP_STEPS} warmup + {MEASURE_STEPS} measure)...")
 
-    benchmark_trainer.fit(model, train_loader)
+    benchmark_trainer.fit(model, train_loader, val_loader)
 
     throughput = benchmark_callback.get_throughput(batch_size)
     total_time = benchmark_callback.end_time - benchmark_callback.start_time
@@ -115,7 +121,16 @@ def main():
     L.seed_everything(42)
 
     print("Initializing DataModule...")
-    datamodule = VSIDataModule(dataset_name="ZStack_HE", batch_size=128, num_workers=16)
+    # Updated with optimized parameters from dataloader benchmark
+    datamodule = VSIDataModule(
+        dataset_name="ZStack_HE",
+        batch_size=128,
+        num_workers=16,
+        patch_size=224,
+        stride=448,
+        min_tissue_coverage=0.05,
+        downsample_factor=2,
+    )
     datamodule.setup(stage="fit")
 
     if datamodule.train_dataset is None:
@@ -123,17 +138,25 @@ def main():
         return
 
     train_loader = datamodule.train_dataloader()
+    val_loader = datamodule.val_dataloader()
     dataset_size = len(datamodule.train_dataset)
     batch_size = datamodule.batch_size
 
     results = []
 
-    arch_list = ["resnet18", "resnet50", "vit_b_16", "convnext_tiny", "efficientnet_b0"]
+    arch_list = [
+        "resnet18",
+        "resnet50",
+        "vit_b_16",
+        "convnext_tiny",
+        "convnext_v2_tiny",
+        "efficientnet_b0",
+    ]
 
     for arch_name in arch_list:
         try:
             res = benchmark_architecture(
-                arch_name, train_loader, dataset_size, batch_size
+                arch_name, train_loader, val_loader, dataset_size, batch_size
             )
             if res:
                 results.append(res)
@@ -150,6 +173,16 @@ def main():
         print(
             f"{r['arch']:<25} | {r['throughput']:<20.2f} | {r['epoch_time_min']:<25.2f}"
         )
+
+    # Save results to JSON
+    output_path = "benchmark_models.json"
+    with open(output_path, "w") as f:
+        json.dump(
+            {"results": results, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")},
+            f,
+            indent=4,
+        )
+    print(f"\nResults saved to {output_path}")
 
 
 if __name__ == "__main__":

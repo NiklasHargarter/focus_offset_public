@@ -42,6 +42,10 @@ def main():
         dataset_name="ZStack_HE",
         batch_size=batch_size_options[0],
         num_workers=worker_options[0],
+        patch_size=224,
+        stride=448,
+        min_tissue_coverage=0.05,
+        downsample_factor=2,
     )
     check_dm.setup(stage="fit")
     first_batch = next(iter(check_dm.train_dataloader()))
@@ -61,17 +65,21 @@ def main():
     for num_workers in worker_options:
         for batch_size in batch_size_options:
             try:
+                # Initialize datamodule once per configuration
+                datamodule = VSIDataModule(
+                    dataset_name="ZStack_HE",
+                    batch_size=batch_size,
+                    num_workers=num_workers,
+                    patch_size=224,
+                    stride=448,
+                    min_tissue_coverage=0.05,
+                    downsample_factor=2,
+                )
+                datamodule.setup(stage="fit")
+                loader = datamodule.train_dataloader()
+
                 trial_speeds = []
                 for i in range(3):
-                    datamodule = VSIDataModule(
-                        dataset_name="ZStack_HE",
-                        batch_size=batch_size,
-                        num_workers=num_workers,
-                    )
-                    datamodule.setup(stage="fit")
-
-                    loader = datamodule.train_dataloader()
-
                     speed = measure_throughput(
                         loader, batch_size=batch_size, steps=40, warmup=10
                     )

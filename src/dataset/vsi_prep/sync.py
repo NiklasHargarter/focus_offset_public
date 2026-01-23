@@ -10,6 +10,7 @@ def sync(
     dataset_name: str,
     patch_size: int,
     stride: int,
+    downsample_factor: int,
     min_tissue_coverage: float,
     force: bool = False,
     skip_preprocess: bool = False,
@@ -36,6 +37,7 @@ def sync(
             dataset_name=dataset_name,
             patch_size=patch_size,
             stride=stride,
+            downsample_factor=downsample_factor,
             min_tissue_coverage=min_tissue_coverage,
             force=force,
         )
@@ -57,7 +59,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
     parser.add_argument("--patch_size", type=int, default=224)
-    parser.add_argument("--stride", type=int, default=224)
+    parser.add_argument("--stride", type=int, default=448)
+    parser.add_argument("--downsample_factor", type=int, default=2)
     parser.add_argument("--min_tissue_coverage", type=float, default=0.05)
     parser.add_argument(
         "--force", action="store_true", help="Force re-preprocessing of ALL files"
@@ -74,6 +77,7 @@ if __name__ == "__main__":
         args.dataset,
         args.patch_size,
         args.stride,
+        args.downsample_factor,
         args.min_tissue_coverage,
         args.force,
         args.skip_preprocess,

@@ -5,7 +5,7 @@ This repository provides a complete pipeline for training and evaluating deep le
 ##  Overview
 
 Focusing is a critical challenge in high-resolution digital pathology. This project implements:
-- **Scalable Preprocessing**: High-throughput "Master Block" strategy for focus estimation (Olympus VSI).
+- **Scalable Preprocessing**: High-throughput 30x downsampled strategy with vectorized focus estimation.
 - **Flexible Architectures**: Support for ResNet, Vision Transformers (ViT), ConvNeXt, and EfficientNet.
 - **Incremental Data Management**: Automated download, extraction, and indexing of >200GB datasets.
 - **Robust Evaluation**: Cross-dataset benchmarking (ZStack HE/IHC, Jiang2018).
@@ -77,4 +77,5 @@ Detailed documentation is available in the `docs/` directory:
 - [Focus Estimation Strategy](docs/focus_strategy.md)
 - [VSI Preprocessing Benchmarks](docs/vsi_extraction_benchmarks.md)
 - [Dataloader Optimization](docs/dataloader.md)
+- [Fast Brenner Vectorization](docs/fast_brenner_vectorization.md)
 

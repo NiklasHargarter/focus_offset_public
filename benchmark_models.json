@@ -1,0 +1,35 @@
+{
+    "results": [
+        {
+            "arch": "resnet18",
+            "throughput": 1176.0895595705754,
+            "epoch_time_min": 34.57160185559839
+        },
+        {
+            "arch": "resnet50",
+            "throughput": 1678.1238253043775,
+            "epoch_time_min": 24.229022547025235
+        },
+        {
+            "arch": "vit_b_16",
+            "throughput": 940.0198624754696,
+            "epoch_time_min": 43.25366050556302
+        },
+        {
+            "arch": "convnext_tiny",
+            "throughput": 1653.529176330614,
+            "epoch_time_min": 24.589405849026512
+        },
+        {
+            "arch": "convnext_v2_tiny",
+            "throughput": 1695.5671796332683,
+            "epoch_time_min": 23.979763520071284
+        },
+        {
+            "arch": "efficientnet_b0",
+            "throughput": 2102.9093715638346,
+            "epoch_time_min": 19.334784727200866
+        }
+    ],
+    "timestamp": "2026-01-23 17:18:12"
+}

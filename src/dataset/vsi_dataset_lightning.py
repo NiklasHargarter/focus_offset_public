@@ -4,6 +4,8 @@ import bisect
 import slideio
 import os
 from typing import Optional, Callable, Any
+from pathlib import Path
+from src import config
 from src.utils.io_utils import suppress_stderr
 
 from src.dataset.vsi_types import ProcessedIndex, SlideMetadata
@@ -28,6 +30,8 @@ class VSIDatasetLightning(Dataset):
         self.cumulative_indices = self.index.cumulative_indices
         self.total_samples = self.index.total_samples
         self.patch_size = self.index.patch_size
+        self.downsample_factor = self.index.downsample_factor
+        self.dataset_name = self.index.dataset_name
 
         self._slides = None
         self._owner_pid = None
@@ -46,14 +50,23 @@ class VSIDatasetLightning(Dataset):
             self._owner_pid = current_pid
 
         if vsi_path not in self._slides:
+            # Robust path handling: Check if the stored path exists,
+            # if not, try to find it in the current dataset raws directory.
+            actual_path = Path(vsi_path)
+            if not actual_path.exists() and self.dataset_name:
+                raw_dir = config.get_vsi_raw_dir(self.dataset_name)
+                alt_path = raw_dir / actual_path.name
+                if alt_path.exists():
+                    actual_path = alt_path
+
             try:
                 with suppress_stderr():
-                    slide = slideio.open_slide(str(vsi_path), "VSI")
+                    slide = slideio.open_slide(str(actual_path), "VSI")
                     scene = slide.get_scene(0)
                 self._slides[vsi_path] = (slide, scene)
             except Exception as e:
                 raise RuntimeError(
-                    f"Error opening slide in process {current_pid}: {vsi_path}. Error: {e}"
+                    f"Error opening slide in process {current_pid}: {actual_path}. Error: {e}"
                 )
 
         return self._slides[vsi_path][1]
@@ -75,30 +88,36 @@ class VSIDatasetLightning(Dataset):
             local_idx = idx - self.cumulative_indices[file_idx - 1]
 
         file_meta: SlideMetadata = self.file_registry[file_idx]
-        vsi_path = file_meta.path
-        patches = file_meta.patches
+        vsi_name = file_meta.name
         num_z = file_meta.num_z
 
         # Within the slide, find the patch and the specific Z-slice
         patch_idx = local_idx // num_z
         z_level = local_idx % num_z
-        patch = patches[patch_idx]
-        x, y, best_z = patch.x, patch.y, patch.z
 
-        scene = self._get_scene(str(vsi_path))
+        # patches shape: (N, 3) -> [x, y, best_z]
+        x, y, best_z = file_meta.patches[patch_idx]
+
+        scene = self._get_scene(vsi_name)
 
         # Calculate focus offset in microns (Target for the regression model)
-        z_res_microns = scene.z_resolution * 1e6
+        z_res = getattr(scene, "z_resolution", 0)
+        if not z_res:
+            raise RuntimeError(
+                f"Slide {vsi_name} from {self.dataset_name} has no Z-resolution metadata. "
+                "Physical micron-based focus offset cannot be calculated."
+            )
+        z_res_microns = z_res * 1e6
         z_offset = float(best_z - z_level) * z_res_microns
 
         rect = (
-            x,
-            y,
-            self.patch_size,
-            self.patch_size,
+            int(x),
+            int(y),
+            int(self.patch_size * self.downsample_factor),
+            int(self.patch_size * self.downsample_factor),
         )
         try:
-            # Efficient single-slice read from VSI
+            # Efficient single-slice read from VSI, with downscaling
             block = scene.read_block(
                 rect=rect,
                 size=(self.patch_size, self.patch_size),
@@ -106,12 +125,15 @@ class VSIDatasetLightning(Dataset):
             )
 
             if self.transform:
-                image = self.transform(block)
+                # Albumentations standard call
+                image = self.transform(image=block)["image"]
             else:
                 image = torch.from_numpy(block).permute(2, 0, 1).float() / 255.0
 
             return image, torch.tensor(z_offset, dtype=torch.float32)
 
         except Exception as e:
-            print(f"Error reading {vsi_path} at {rect} z={z_level}: {e}")
+            raw_dir = config.get_vsi_raw_dir(self.dataset_name)
+            full_path = raw_dir / vsi_name
+            print(f"Error reading {full_path} at {rect} z={z_level}: {e}")
             raise e

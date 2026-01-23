@@ -1,30 +1,20 @@
-from typing import NamedTuple
 from dataclasses import dataclass
-from pathlib import Path
-
-
-class Patch(NamedTuple):
-    """Spatial coordinate and optimal Z-level for a single patch."""
-
-    x: int
-    y: int
-    z: int
+import numpy as np
 
 
 @dataclass
 class SlideMetadata:
-    """Metadata for a single VSI slide."""
+    """Metadata for a single VSI slide (Coordinates are in RAW 60x resolution)."""
 
     name: str
-    path: Path
     width: int
     height: int
     num_z: int
-    patches: list[Patch]
+    patches: np.ndarray  # Shape (N, 3) -> [raw_x, raw_y, best_z]
 
     @property
     def patch_count(self) -> int:
-        return len(self.patches)
+        return self.patches.shape[0]
 
     @property
     def total_samples(self) -> int:
@@ -36,9 +26,10 @@ class PreprocessConfig:
     """Configuration used during preprocessing for traceability."""
 
     patch_size: int  # Output image size (e.g. 224)
-    stride: int  # Step size on the slide
+    stride: int  # Step size in output coordinates (e.g. 224 for adjacent)
     min_tissue_coverage: float
     dataset_name: str
+    downsample_factor: int = 1
 
 
 @dataclass
@@ -59,9 +50,11 @@ class ProcessedIndex:
     """Runtime index used by the dataset, filtered and with cumulative indices."""
 
     file_registry: list[SlideMetadata]
-    cumulative_indices: list[int]
+    cumulative_indices: np.ndarray  # Shape (N,)
     patch_size: int
+    downsample_factor: int = 1
+    dataset_name: str = ""
 
     @property
     def total_samples(self) -> int:
-        return sum(slide.total_samples for slide in self.file_registry)
+        return self.cumulative_indices[-1] if len(self.cumulative_indices) > 0 else 0

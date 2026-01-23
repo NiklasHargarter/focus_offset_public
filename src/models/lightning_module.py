@@ -16,12 +16,14 @@ class FocusOffsetRegressor(L.LightningModule):
         self,
         backbone: nn.Module,
         learning_rate: float = 1e-4,
+        weight_decay: float = 0.05,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["backbone"])
         self.backbone = backbone
         self.learning_rate = learning_rate
-        self.criterion = nn.MSELoss()
+        self.weight_decay = weight_decay
+        self.criterion = nn.HuberLoss(delta=1.0)
 
     def forward(self, x):
         return self.backbone(x)
@@ -78,9 +80,19 @@ class FocusOffsetRegressor(L.LightningModule):
         targets = targets.unsqueeze(1)
         outputs = self(images)
         loss = self.criterion(outputs, targets)
+        mae = torch.abs(outputs - targets).mean()
+
         self.log(
             "val_loss",
             loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        self.log(
+            "val_mae",
+            mae,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -143,6 +155,22 @@ class FocusOffsetRegressor(L.LightningModule):
 
     def configure_optimizers(self):
         """
-        Default optimizer configuration.
+        Configures AdamW optimizer with a plateau-based learning rate scheduler.
         """
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.AdamW(
+            self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
+        )
+
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.5, patience=5
+        )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+                "interval": "epoch",
+                "frequency": 1,
+            },
+        }

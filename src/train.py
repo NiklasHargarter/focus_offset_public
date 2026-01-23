@@ -17,7 +17,8 @@ def cli_main():
         datamodule_class=L.LightningDataModule,
         subclass_mode_data=True,
         seed_everything_default=42,
-        save_config_callback=None,  # Config will be saved with checkpoints automatically
+        save_config_callback=None,
+        parser_kwargs={"default_config_files": ["default_config.yaml"]},
         run=True,
     )
 

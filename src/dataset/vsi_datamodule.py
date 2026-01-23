@@ -10,6 +10,9 @@ from pathlib import Path
 from src import config
 from src.dataset.vsi_dataset_lightning import VSIDatasetLightning
 from src.dataset.vsi_types import MasterIndex, ProcessedIndex, PreprocessConfig
+import numpy as np
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 from src.dataset.vsi_prep.preprocess import load_master_index
 
 
@@ -27,6 +30,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         patch_size: int,
         stride: int,
         min_tissue_coverage: float,
+        downsample_factor: int = 2,
         split_ratio: float = 0.3,
         force_preprocess: bool = False,
         cache_dir: str = "cache",
@@ -37,6 +41,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         self.num_workers = num_workers
         self.patch_size = patch_size
         self.stride = stride
+        self.downsample_factor = downsample_factor
         self.min_tissue_coverage = min_tissue_coverage
         self.split_ratio = split_ratio
         self.force_preprocess = force_preprocess
@@ -45,6 +50,32 @@ class BaseVSIDataModule(L.LightningDataModule):
         self.train_dataset: Optional[torch.utils.data.Dataset] = None
         self.val_dataset: Optional[torch.utils.data.Dataset] = None
         self.test_dataset: Optional[torch.utils.data.Dataset] = None
+
+    @property
+    def train_transform(self):
+        return A.Compose(
+            [
+                A.D4(p=1.0),
+                A.ColorJitter(
+                    brightness=(0.9, 1.1),
+                    contrast=(0.9, 1.1),
+                    saturation=(0.9, 1.1),
+                    hue=(-0.1, 0.1),
+                    p=0.5,
+                ),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2(),
+            ]
+        )
+
+    @property
+    def val_transform(self):
+        return A.Compose(
+            [
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2(),
+            ]
+        )
 
     def prepare_data(self):
         """
@@ -58,6 +89,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         expected_config = PreprocessConfig(
             patch_size=self.patch_size,
             stride=self.stride,
+            downsample_factor=self.downsample_factor,
             min_tissue_coverage=self.min_tissue_coverage,
             dataset_name=self.dataset_name,
         )
@@ -92,7 +124,7 @@ class BaseVSIDataModule(L.LightningDataModule):
             )
             print(
                 f"  python src/dataset/vsi_prep/sync.py --dataset {self.dataset_name} "
-                f"--patch_size {self.patch_size} --stride {self.stride}"
+                f"--patch_size {self.patch_size} --stride {self.stride} --downsample_factor {self.downsample_factor}"
             )
             print(
                 "\nNote: For 200GB+ datasets, this ensures a clean and traceable environment."
@@ -111,24 +143,28 @@ class BaseVSIDataModule(L.LightningDataModule):
         name_to_entry = {entry.name: entry for entry in file_registry}
 
         filtered_registry = []
-        cumulative_indices = []
-        cumulative_count = 0
+        counts = []
 
         for name in files:
             if name in name_to_entry:
                 res = name_to_entry[name]
-                cumulative_count += res.total_samples
-                cumulative_indices.append(cumulative_count)
                 filtered_registry.append(res)
+                counts.append(res.total_samples)
             else:
                 print(
                     f"Warning: File {name} not found in master index for {self.dataset_name}"
                 )
 
+        cumulative_indices = (
+            np.cumsum(counts) if counts else np.array([], dtype=np.int64)
+        )
+
         return ProcessedIndex(
             file_registry=filtered_registry,
             cumulative_indices=cumulative_indices,
             patch_size=master_index.patch_size,
+            downsample_factor=master_index.config_state.downsample_factor,
+            dataset_name=self.dataset_name,
         )
 
     def _load_data_indices(self) -> tuple[MasterIndex, dict]:
@@ -214,8 +250,12 @@ class HEHoldOutDataModule(BaseVSIDataModule):
             train_index = self._filter_index(master_index, train_files)
             val_index = self._filter_index(master_index, val_files)
 
-            self.train_dataset = VSIDatasetLightning(index_data=train_index)
-            self.val_dataset = VSIDatasetLightning(index_data=val_index)
+            self.train_dataset = VSIDatasetLightning(
+                index_data=train_index, transform=self.train_transform
+            )
+            self.val_dataset = VSIDatasetLightning(
+                index_data=val_index, transform=self.val_transform
+            )
 
             print(
                 f"DataModule Setup (fit) [HoldOut]: {len(self.train_dataset)} train, {len(self.val_dataset)} val samples."
@@ -223,7 +263,9 @@ class HEHoldOutDataModule(BaseVSIDataModule):
 
         if stage == "test" or stage == "predict" or stage is None:
             test_index = self._filter_index(master_index, splits["test"])
-            self.test_dataset = VSIDatasetLightning(index_data=test_index)
+            self.test_dataset = VSIDatasetLightning(
+                index_data=test_index, transform=self.val_transform
+            )
 
 
 class HEFoldDataModule(BaseVSIDataModule):
@@ -265,8 +307,12 @@ class HEFoldDataModule(BaseVSIDataModule):
             train_index = self._filter_index(master_index, train_files)
             val_index = self._filter_index(master_index, val_files)
 
-            self.train_dataset = VSIDatasetLightning(index_data=train_index)
-            self.val_dataset = VSIDatasetLightning(index_data=val_index)
+            self.train_dataset = VSIDatasetLightning(
+                index_data=train_index, transform=self.train_transform
+            )
+            self.val_dataset = VSIDatasetLightning(
+                index_data=val_index, transform=self.val_transform
+            )
 
             print(
                 f"DataModule Setup (fit) [Fold {self.fold_idx}]: {len(self.train_dataset)} train, {len(self.val_dataset)} val samples."
@@ -274,7 +320,9 @@ class HEFoldDataModule(BaseVSIDataModule):
 
         if stage == "test" or stage == "predict" or stage is None:
             test_index = self._filter_index(master_index, splits["test"])
-            self.test_dataset = VSIDatasetLightning(index_data=test_index)
+            self.test_dataset = VSIDatasetLightning(
+                index_data=test_index, transform=self.val_transform
+            )
 
 
 class IHCDataModule(BaseVSIDataModule):
@@ -290,7 +338,9 @@ class IHCDataModule(BaseVSIDataModule):
 
         if stage == "fit" or stage is None:
             train_index = self._filter_index(master_index, splits.get("train_pool", []))
-            self.train_dataset = VSIDatasetLightning(index_data=train_index)
+            self.train_dataset = VSIDatasetLightning(
+                index_data=train_index, transform=self.train_transform
+            )
 
             self.val_dataset = None
 
@@ -298,7 +348,9 @@ class IHCDataModule(BaseVSIDataModule):
             test_files = splits.get("test", [])
 
             test_index = self._filter_index(master_index, test_files)
-            self.test_dataset = VSIDatasetLightning(index_data=test_index)
+            self.test_dataset = VSIDatasetLightning(
+                index_data=test_index, transform=self.val_transform
+            )
 
 
 VSIDataModule = HEHoldOutDataModule
