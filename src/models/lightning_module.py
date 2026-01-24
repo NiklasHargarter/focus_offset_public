@@ -1,9 +1,6 @@
 import torch
 import torch.nn as nn
 import lightning as L
-import torchvision.utils
-import numpy as np
-from PIL import Image, ImageDraw
 
 
 class FocusOffsetRegressor(L.LightningModule):
@@ -17,19 +14,41 @@ class FocusOffsetRegressor(L.LightningModule):
         backbone: nn.Module,
         learning_rate: float = 1e-4,
         weight_decay: float = 0.05,
+        save_predictions: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["backbone"])
         self.backbone = backbone
+        # Optimization: Use channels_last memory format for Blackwell/Ada GPUs
+        self.backbone.to(memory_format=torch.channels_last)
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
+        self.save_predictions = save_predictions
         self.criterion = nn.HuberLoss(delta=1.0)
 
     def forward(self, x):
         return self.backbone(x)
 
+    def on_after_batch_transfer(self, batch, dataloader_idx):
+        """
+        State-of-the-art GPU normalization hook.
+        Moves float conversion to GPU to reduce PCIe bandwidth usage.
+        """
+        images, targets, metadata = batch
+
+        # If data is still uint8, move to float efficiently on GPU
+        if images.dtype == torch.uint8:
+            images = images.float() / 255.0
+
+        return images, targets, metadata
+
     def training_step(self, batch, batch_idx):
-        images, targets = batch
+        images, targets, _ = batch
+
+        # Optimization: Channels Last for Tensor Cores
+        if images.device.type == "cuda":
+            images = images.to(memory_format=torch.channels_last)
+
         targets = targets.unsqueeze(1)
         outputs = self(images)
         loss = self.criterion(outputs, targets)
@@ -40,11 +59,16 @@ class FocusOffsetRegressor(L.LightningModule):
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
+            batch_size=images.size(0),
         )
         return loss
 
     def test_step(self, batch, batch_idx):
-        images, targets = batch
+        images, targets, _ = batch
+
+        if images.device.type == "cuda":
+            images = images.to(memory_format=torch.channels_last)
+
         targets = targets.unsqueeze(1)
         outputs = self(images)
         loss = self.criterion(outputs, targets)
@@ -76,7 +100,11 @@ class FocusOffsetRegressor(L.LightningModule):
             del self.test_step_outputs
 
     def validation_step(self, batch, batch_idx):
-        images, targets = batch
+        images, targets, metadata = batch
+
+        if images.device.type == "cuda":
+            images = images.to(memory_format=torch.channels_last)
+
         targets = targets.unsqueeze(1)
         outputs = self(images)
         loss = self.criterion(outputs, targets)
@@ -89,6 +117,7 @@ class FocusOffsetRegressor(L.LightningModule):
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
+            batch_size=images.size(0),
         )
         self.log(
             "val_mae",
@@ -97,60 +126,67 @@ class FocusOffsetRegressor(L.LightningModule):
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
+            batch_size=images.size(0),
         )
 
-        # Store first batch of validation samples for logging
-        if batch_idx == 0:
-            self.validation_step_outputs = {
-                "images": images[:8].detach().cpu(),
-                "targets": targets[:8].detach().cpu(),
-                "outputs": outputs[:8].detach().cpu(),
-            }
+        # Optimization: Batch-transfer metadata to CPU to avoid graph-breaking .item() calls
+        # We only do this if we are not in a benchmark (logger exists) and save_predictions is enabled
+        if self.logger and self.save_predictions:
+            pred_flat = outputs.squeeze(1).detach().float().cpu().numpy()
+            target_flat = targets.squeeze(1).detach().float().cpu().numpy()
+
+            # Efficiently move all metadata tensors to CPU at once
+            xs = metadata["x"].detach().cpu().numpy()
+            ys = metadata["y"].detach().cpu().numpy()
+            zs = metadata["z_level"].detach().cpu().numpy()
+            opt_zs = metadata["optimal_z"].detach().cpu().numpy()
+            filenames = metadata["filename"]
+
+            batch_data = []
+            for i in range(len(pred_flat)):
+                batch_data.append(
+                    {
+                        "filename": filenames[i],
+                        "x": int(xs[i]),
+                        "y": int(ys[i]),
+                        "z_level": int(zs[i]),
+                        "optimal_z": int(opt_zs[i]),
+                        "prediction": float(pred_flat[i]),
+                        "target": float(target_flat[i]),
+                        "error": float(abs(pred_flat[i] - target_flat[i])),
+                    }
+                )
+
+            if not hasattr(self, "validation_step_outputs"):
+                self.validation_step_outputs = []
+            self.validation_step_outputs.extend(batch_data)
 
         return loss
 
     def on_validation_epoch_end(self):
         """
-        Log sample predictions overlaid on patches to TensorBoard at the end of each validation epoch.
+        Aggregates per-sample validation results and saves them to a CSV.
         """
-        if (
-            hasattr(self, "validation_step_outputs")
-            and self.logger
-            and hasattr(self.logger.experiment, "add_image")
-        ):
-            samples = self.validation_step_outputs
-            imgs = samples["images"]
-            targets = samples["targets"]
-            outputs = samples["outputs"]
+        if hasattr(self, "validation_step_outputs") and self.validation_step_outputs:
+            import pandas as pd
+            import os
 
-            processed_patches = []
+            df = pd.DataFrame(self.validation_step_outputs)
 
-            for i in range(len(imgs)):
-                # Convert tensor to PIL for drawing
-                img_np = (imgs[i].permute(1, 2, 0).numpy() * 255).astype(np.uint8)
-                img_pil = Image.fromarray(img_np)
+            # Determine save directory
+            if self.logger and self.logger.log_dir:
+                save_dir = self.logger.log_dir
+            else:
+                save_dir = "logs"
 
-                draw = ImageDraw.Draw(img_pil)
+            os.makedirs(save_dir, exist_ok=True)
 
-                pred = outputs[i].item()
-                gt = targets[i].item()
-                text = f"P:{pred:.2f} G:{gt:.2f}"
+            # Save CSV with epoch number
+            filename = f"val_predictions_epoch_{self.current_epoch}.csv"
+            save_path = os.path.join(save_dir, filename)
+            df.to_csv(save_path, index=False)
 
-                # Draw semi-transparent background box for text readability
-                draw.rectangle([2, 2, 110, 20], fill=(0, 0, 0, 150))
-                draw.text((5, 5), text, fill=(255, 255, 255))
-
-                # Convert back to tensor
-                processed_patches.append(
-                    torch.from_numpy(np.array(img_pil)).permute(2, 0, 1).float() / 255.0
-                )
-
-            # Create an image grid and log to tensorboard
-            grid = torchvision.utils.make_grid(processed_patches, nrow=4)
-            self.logger.experiment.add_image(
-                "val/annotated_samples", grid, self.global_step
-            )
-
+            # Clear memory
             del self.validation_step_outputs
 
     def configure_optimizers(self):

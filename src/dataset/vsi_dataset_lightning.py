@@ -74,7 +74,7 @@ class VSIDatasetLightning(Dataset):
     def __len__(self) -> int:
         return self.total_samples
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, dict]:
         """
         Maps a global linear index to a specific (Slide, Patch, Z-slice) triplet.
         Calculates the focus offset in microns relative to the precomputed 'sharpest' Z.
@@ -130,7 +130,15 @@ class VSIDatasetLightning(Dataset):
             else:
                 image = torch.from_numpy(block).permute(2, 0, 1).float() / 255.0
 
-            return image, torch.tensor(z_offset, dtype=torch.float32)
+            metadata = {
+                "filename": vsi_name,
+                "x": int(x),
+                "y": int(y),
+                "z_level": int(z_level),
+                "optimal_z": int(best_z),
+            }
+
+            return image, torch.tensor(z_offset, dtype=torch.float32), metadata
 
         except Exception as e:
             raw_dir = config.get_vsi_raw_dir(self.dataset_name)

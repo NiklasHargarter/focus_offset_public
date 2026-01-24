@@ -2,6 +2,7 @@
     "test": [
         "002_1_HE_stack.vsi",
         "008_1_HE_stack.vsi",
+        "009_1_HE_stack.vsi",
         "010_1_HE_stack.vsi",
         "018_1_HE_stack.vsi",
         "024_1_HE_stack.vsi",
@@ -35,7 +36,6 @@
         "005_1_HE_stack.vsi",
         "006_1_HE_stack.vsi",
         "007_1_HE_stack.vsi",
-        "009_1_HE_stack.vsi",
         "011_1_HE_stack.vsi",
         "012_1_HE_stack.vsi",
         "013_1_HE_stack.vsi",
@@ -122,5 +122,5 @@
     ],
     "seed": 42,
     "total_slides": 117,
-    "total_patches": 3714417
+    "total_patches": 2053674
 }

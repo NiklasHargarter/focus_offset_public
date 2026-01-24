@@ -8,6 +8,7 @@ dependencies = [
     "albumentations>=2.0.8",
     "exact-sync>=0.0.39",
     "jsonargparse[signatures]>=4.27.7",
+    "kornia>=0.8.2",
     "lightning[pytorch-extra]>=2.6.0",
     "matplotlib>=3.10.7",
     "numpy>=2.3.4",

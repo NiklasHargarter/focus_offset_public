@@ -34,6 +34,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         split_ratio: float = 0.3,
         force_preprocess: bool = False,
         cache_dir: str = "cache",
+        prefetch_factor: int = 4,
     ):
         super().__init__()
         self.dataset_name = dataset_name
@@ -46,6 +47,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         self.split_ratio = split_ratio
         self.force_preprocess = force_preprocess
         self.cache_dir = Path(cache_dir)
+        self.prefetch_factor = prefetch_factor
 
         self.train_dataset: Optional[torch.utils.data.Dataset] = None
         self.val_dataset: Optional[torch.utils.data.Dataset] = None
@@ -194,6 +196,7 @@ class BaseVSIDataModule(L.LightningDataModule):
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
             pin_memory=torch.cuda.is_available(),
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def val_dataloader(self):
@@ -206,6 +209,7 @@ class BaseVSIDataModule(L.LightningDataModule):
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
             pin_memory=torch.cuda.is_available(),
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def test_dataloader(self):
@@ -218,6 +222,7 @@ class BaseVSIDataModule(L.LightningDataModule):
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
             pin_memory=torch.cuda.is_available(),
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def predict_dataloader(self):

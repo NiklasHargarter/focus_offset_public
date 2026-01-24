@@ -1,9 +1,0 @@
-{
-    "train": [],
-    "val": [],
-    "test": [
-        "001_1_IHC_stack.vsi"
-    ],
-    "seed": 42,
-    "total": 1
-}
