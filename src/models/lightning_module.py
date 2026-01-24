@@ -191,22 +191,31 @@ class FocusOffsetRegressor(L.LightningModule):
 
     def configure_optimizers(self):
         """
-        Configures AdamW optimizer with a plateau-based learning rate scheduler.
+        Configures AdamW with CosineAnnealing and Linear Warmup.
+        This combo is far more stable for ConvNeXt architectures.
         """
         optimizer = torch.optim.AdamW(
             self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
         )
 
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=5
-        )
+        # Warmup period (10% of training, max 5 epochs)
+        max_epochs = self.trainer.max_epochs
+        warmup_steps = max(1, min(5, max_epochs // 10))
+        main_steps = max(1, max_epochs - warmup_steps)
+
+        def lr_lambda(epoch):
+            if epoch < warmup_steps:
+                return float(epoch + 1) / warmup_steps
+
+            progress = float(epoch - warmup_steps) / main_steps
+            return 0.5 * (1.0 + torch.cos(torch.tensor(3.14159 * min(progress, 1.0))))
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_loss",
                 "interval": "epoch",
-                "frequency": 1,
             },
         }

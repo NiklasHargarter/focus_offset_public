@@ -205,11 +205,11 @@ class BaseVSIDataModule(L.LightningDataModule):
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
-            shuffle=False,
+            shuffle=True,  # Set to True to allow WSI workers to spread across slides
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
             pin_memory=torch.cuda.is_available(),
-            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
+            prefetch_factor=6 if self.num_workers > 0 else None,
         )
 
     def test_dataloader(self):

@@ -8,7 +8,6 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 from lightning.pytorch.loggers import TensorBoardLogger
-import warnings
 
 # Import your codebase modules
 from src.models.lightning_module import FocusOffsetRegressor
@@ -27,7 +26,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_workers", type=int, default=os.cpu_count())
     parser.add_argument(
-        "--patience", type=int, default=5, help="Early stopping patience"
+        "--patience", type=int, default=10, help="Early stopping patience"
     )
     parser.add_argument(
         "--log_interval", type=int, default=1000, help="Log every N steps"
@@ -71,7 +70,7 @@ def main():
 
         model = FocusOffsetRegressor(
             backbone=backbone,
-            learning_rate=1e-4,
+            learning_rate=5e-5,  # Lowered for better stability
             weight_decay=0.05,
             save_predictions=False,  # Disable heavy CSV logging for CV speed
         )
@@ -102,13 +101,14 @@ def main():
 
         # 4. Initialize Trainer
         trainer_kwargs = {
-            "max_epochs": 1 if args.dry_run else 100,
+            "max_epochs": 1 if args.dry_run else 60,
             "precision": "bf16-mixed",  # Highly recommended for RTX 5090 / Blackwell
             "accelerator": "auto",
             "devices": 1,
             "logger": logger,
             "callbacks": callbacks,
             "log_every_n_steps": 10 if args.dry_run else args.log_interval,
+            "gradient_clip_val": 1.0,  # Stabilize "jumpy" validation
         }
 
         if args.dry_run:
