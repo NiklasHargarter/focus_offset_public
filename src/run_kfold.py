@@ -78,13 +78,17 @@ def main():
         # Optimization for RTX 5090: Kernel fusion and graph optimization
         # Note: The first few batches will be slow due to compilation overhead
         if not args.dry_run:
-            print("Compiling model for maximum performance...")
-            model = torch.compile(model)
+            print("Compiling backbone for maximum performance...")
+            model.backbone = torch.compile(model.backbone)
+        else:
+            # High-fidelity dry-run: compile with a faster mode to catch errors
+            print("Smoke Test: Compiling backbone in fast mode...")
+            model.backbone = torch.compile(model.backbone, mode="reduce-overhead")
 
         # 3. Setup Callbacks & Logger
         log_name = f"focus_convnextv2_kfold_fold_{i}"
         if args.dry_run:
-            log_name += "_dryrun"
+            log_name += "_smoke_test"
 
         logger = TensorBoardLogger("logs", name=log_name)
 
@@ -101,19 +105,20 @@ def main():
 
         # 4. Initialize Trainer
         trainer_kwargs = {
-            "max_epochs": 1 if args.dry_run else 60,
+            "max_epochs": 2 if args.dry_run else 60, # At least 2 epochs to test transitions
             "precision": "bf16-mixed",  # Highly recommended for RTX 5090 / Blackwell
             "accelerator": "auto",
             "devices": 1,
             "logger": logger,
             "callbacks": callbacks,
-            "log_every_n_steps": 10 if args.dry_run else args.log_interval,
+            "log_every_n_steps": 5 if args.dry_run else args.log_interval,
             "gradient_clip_val": 1.0,  # Stabilize "jumpy" validation
         }
 
         if args.dry_run:
-            trainer_kwargs["limit_train_batches"] = 100
-            trainer_kwargs["limit_val_batches"] = 50
+            # We only limit the batches, nothing else!
+            trainer_kwargs["limit_train_batches"] = 20
+            trainer_kwargs["limit_val_batches"] = 10
 
         trainer = L.Trainer(**trainer_kwargs)
 

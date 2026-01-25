@@ -4,12 +4,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from src import config
+from src.dataset.vsi_prep.preprocess import load_master_index
 
 
 def save_3d(slide, output_dir):
-    X = np.array([p.x for p in slide.patches])
-    Y = np.array([p.y for p in slide.patches])
-    Z = np.array([p.z for p in slide.patches])
+    X = slide.patches[:, 0]
+    Y = slide.patches[:, 1]
+    Z = slide.patches[:, 2]
 
     if len(X) < 3:
         return
@@ -30,14 +31,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="ZStack_HE")
     parser.add_argument("--patch_size", type=int, default=config.PATCH_SIZE)
+    parser.add_argument(
+        "--limit", type=int, default=5, help="Number of slides to process (default: 5)"
+    )
     args = parser.parse_args()
 
-    index_path = config.get_master_index_path(args.dataset, patch_size=args.patch_size)
-    with open(index_path, "rb") as f:
-        master = pickle.load(f)
+    master = load_master_index(args.dataset, patch_size=args.patch_size)
+    if master is None:
+        print(f"Error: Master index not found for {args.dataset}")
+        exit(1)
 
-    vis_root = config.get_vis_dir(args.dataset, patch_size=args.patch_size)
-    for slide in master.file_registry:
-        output_dir = vis_root / Path(slide.name).stem
-        output_dir.mkdir(parents=True, exist_ok=True)
-        save_3d(slide, output_dir)
+    vis_root = config.get_vis_dir("tilts_3d", args.dataset, patch_size=args.patch_size)
+    for slide in master.file_registry[: args.limit]:
+        save_3d(slide, vis_root)

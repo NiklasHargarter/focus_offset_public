@@ -18,9 +18,11 @@ def get_vsi_raw_dir(dataset_name: str = DATASET_NAME) -> Path:
     return DATA_ROOT / dataset_name / "raws"
 
 
-def get_vis_dir(dataset_name: str = DATASET_NAME, patch_size: int = PATCH_SIZE) -> Path:
-    """Path to the visualization directory for a given dataset and patch size."""
-    path = VIS_DIR / f"p{patch_size}" / dataset_name
+def get_vis_dir(
+    vis_type: str, dataset_name: str = DATASET_NAME, patch_size: int = PATCH_SIZE
+) -> Path:
+    """Path to the visualization directory for a given type, dataset, and patch size."""
+    path = VIS_DIR / vis_type / dataset_name / f"p{patch_size}"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

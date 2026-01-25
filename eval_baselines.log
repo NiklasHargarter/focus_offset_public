@@ -1,0 +1,116 @@
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'test_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:378: You have overridden `on_after_batch_transfer` in `LightningModule` but have passed in a `LightningDataModule`. It will use the implementation from `LightningModule` instance.
+/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/utilities/data.py:79: Trying to infer the `batch_size` from an ambiguous collection. The batch size we found is 256. To avoid any miscalculations, use `self.log(..., batch_size=batch_size)`.
+Found 5 checkpoints.
+  Loading weights from logs/focus_convnextv2_kfold_fold_0/version_0/checkpoints/best_model-epoch=04-val_loss=0.0847.ckpt...
+  Loading weights from logs/focus_convnextv2_kfold_fold_1/version_0/checkpoints/best_model-epoch=05-val_loss=0.0750.ckpt...
+  Loading weights from logs/focus_convnextv2_kfold_fold_2/version_0/checkpoints/best_model-epoch=06-val_loss=0.1153.ckpt...
+  Loading weights from logs/focus_convnextv2_kfold_fold_3/version_0/checkpoints/best_model-epoch=05-val_loss=0.0767.ckpt...
+  Loading weights from logs/focus_convnextv2_kfold_fold_4/version_0/checkpoints/best_model-epoch=06-val_loss=0.0865.ckpt...
+
+
+############################################################
+EVALUATING ON DATASET: ZStack_HE
+############################################################
+
+--- Testing Fold 0 ---
+Data environment for ZStack_HE (p224) is OK.
+Testing ━━━━━━━━━━━━━ 20/20 0:00:17 •    1.14it/s 
+                            0:00:00               
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+--- Testing Fold 1 ---
+Data environment for ZStack_HE (p224) is OK.
+Testing ━━━━━━━━━━━━━ 20/20 0:00:16 •      1.19it/s 
+                            0:00:00                 
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+--- Testing Fold 2 ---
+Data environment for ZStack_HE (p224) is OK.
+Testing ━━━━━━━━━━━━━ 20/20 0:00:15 •      1.19it/s 
+                            0:00:00                 
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+--- Testing Fold 3 ---
+Data environment for ZStack_HE (p224) is OK.
+Testing ━━━━━━━━━━━━━ 20/20 0:00:15 •      1.20it/s 
+                            0:00:00                 
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+--- Testing Fold 4 ---
+Data environment for ZStack_HE (p224) is OK.
+Testing ━━━━━━━━━━━━━ 20/20 0:00:15 •      1.20it/s 
+                            0:00:00                 
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+========================================
+K-FOLD INDIVIDUAL SUMMARY (ZStack_HE)
+MEAN MAE: 0.3348 ± 0.0092
+========================================
+
+--- Testing Ensemble ---
+Data environment for ZStack_HE (p224) is OK.
+Testing ━━━━━━━━━━━━━ 20/20 0:00:20 •      0.93it/s 
+                            0:00:00                 
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+========================================
+ENSEMBLE SUMMARY (ZStack_HE)
+MAE: 0.3190
+========================================
+
+--- Testing Naive Baseline (Zero-Offset) ---
+Data environment for ZStack_HE (p224) is OK.
+Testing                0/20 0:00:00 •      0.00it/s 
+                            -:--:--                 
+Traceback (most recent call last):
+  File "/home/niklas/focus_offset_public/src/evaluate_kfold.py", line 246, in <module>
+    main()
+  File "/home/niklas/focus_offset_public/src/evaluate_kfold.py", line 219, in main
+    naive_res = evaluate_fold(
+                ^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/src/evaluate_kfold.py", line 99, in evaluate_fold
+    test_results = trainer.test(model, datamodule=datamodule, verbose=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/trainer.py", line 821, in test
+    return call._call_and_handle_interrupt(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/call.py", line 49, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/trainer.py", line 864, in _test_impl
+    results = self._run(model, ckpt_path=ckpt_path, weights_only=weights_only)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/trainer.py", line 1079, in _run
+    results = self._run_stage()
+              ^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/trainer.py", line 1116, in _run_stage
+    return self._evaluation_loop.run()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/loops/utilities.py", line 179, in _decorator
+    return loop_run(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/loops/evaluation_loop.py", line 146, in run
+    self._evaluation_step(batch, batch_idx, dataloader_idx, dataloader_iter)
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/loops/evaluation_loop.py", line 441, in _evaluation_step
+    output = call._call_strategy_hook(trainer, hook_name, *step_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/call.py", line 329, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/strategies/strategy.py", line 425, in test_step
+    return self.lightning_module.test_step(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/src/evaluate_kfold.py", line 34, in test_step
+    self.log("test_mae", abs_err.mean())
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/core/module.py", line 531, in log
+    results.log(
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1044, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/connectors/logger_connector/result.py", line 409, in log
+    raise MisconfigurationException(
+lightning.fabric.utilities.exceptions.MisconfigurationException: You called `self.log(test_mae, ...)` twice in `test_step` with different arguments. This is not allowed

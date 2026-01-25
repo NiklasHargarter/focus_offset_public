@@ -4,6 +4,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from src import config
+from src.dataset.vsi_prep.preprocess import load_master_index
 
 
 def save_heatmap(slide, output_dir, patch_size):
@@ -12,12 +13,13 @@ def save_heatmap(slide, output_dir, patch_size):
     heatmap = np.full((h, w), np.nan)
 
     for p in slide.patches:
-        dx, dy = int(p.x / ds), int(p.y / ds)
+        x, y, z = p
+        dx, dy = int(x / ds), int(y / ds)
         dx_end, dy_end = (
-            int((p.x + patch_size) / ds),
-            int((p.y + patch_size) / ds),
+            int((x + patch_size) / ds),
+            int((y + patch_size) / ds),
         )
-        heatmap[dy:dy_end, dx:dx_end] = p.z
+        heatmap[dy:dy_end, dx:dx_end] = z
 
     plt.figure(figsize=(10, 8))
     plt.imshow(heatmap, cmap="viridis")
@@ -35,15 +37,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="ZStack_HE")
     parser.add_argument("--patch_size", type=int, default=config.PATCH_SIZE)
+    parser.add_argument(
+        "--limit", type=int, default=5, help="Number of slides to process (default: 5)"
+    )
     args = parser.parse_args()
 
-    index_path = config.get_master_index_path(args.dataset, patch_size=args.patch_size)
-    with open(index_path, "rb") as f:
-        master = pickle.load(f)
+    master = load_master_index(args.dataset, patch_size=args.patch_size)
+    if master is None:
+        print(f"Error: Master index not found for {args.dataset}")
+        exit(1)
 
-    vis_root = config.get_vis_dir(args.dataset, patch_size=args.patch_size)
+    vis_root = config.get_vis_dir("heatmaps", args.dataset, patch_size=args.patch_size)
 
-    for slide in master.file_registry:
-        output_dir = vis_root / Path(slide.name).stem
-        output_dir.mkdir(parents=True, exist_ok=True)
-        save_heatmap(slide, output_dir, master.patch_size)
+    for slide in master.file_registry[: args.limit]:
+        save_heatmap(slide, vis_root, master.patch_size)

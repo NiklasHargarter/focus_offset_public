@@ -1,0 +1,9 @@
+{
+    "test": [
+        "001_1_IHC_stack.vsi"
+    ],
+    "train_pool": [],
+    "seed": 42,
+    "total_slides": 1,
+    "total_patches": 2187
+}

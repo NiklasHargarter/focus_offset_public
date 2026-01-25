@@ -104,11 +104,11 @@ class BaseVSIDataModule(L.LightningDataModule):
             with open(master_index_path, "rb") as f:
                 manifest_data = pickle.load(f)
 
-            if manifest_data["config_state"] != expected_config:
+            if manifest_data.config_state != expected_config:
                 missing.append(
                     f"Master Index Configuration Mismatch!\n"
                     f"  Expected: {expected_config}\n"
-                    f"  Found:    {manifest_data['config_state']}"
+                    f"  Found:    {manifest_data.config_state}"
                 )
 
         # Also check if any slide indices exist
@@ -196,7 +196,7 @@ class BaseVSIDataModule(L.LightningDataModule):
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
             pin_memory=torch.cuda.is_available(),
-            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
+            prefetch_factor=2 if self.num_workers > 0 else None,
         )
 
     def val_dataloader(self):
@@ -207,9 +207,9 @@ class BaseVSIDataModule(L.LightningDataModule):
             batch_size=self.batch_size,
             shuffle=True,  # Set to True to allow WSI workers to spread across slides
             num_workers=self.num_workers,
-            persistent_workers=self.num_workers > 0,
+            persistent_workers=False,  # Disable to free up RAM between epochs
             pin_memory=torch.cuda.is_available(),
-            prefetch_factor=6 if self.num_workers > 0 else None,
+            prefetch_factor=2 if self.num_workers > 0 else None,
         )
 
     def test_dataloader(self):

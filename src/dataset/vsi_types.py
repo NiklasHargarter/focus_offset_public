@@ -30,6 +30,8 @@ class PreprocessConfig:
     min_tissue_coverage: float
     dataset_name: str
     downsample_factor: int = 1
+    enable_ambiguity_filter: bool = True
+    enable_spatial_filter: bool = True
 
 
 @dataclass

@@ -2,34 +2,34 @@
     "results": [
         {
             "arch": "resnet18",
-            "throughput": 1176.0895595705754,
-            "epoch_time_min": 34.57160185559839
+            "throughput": 1848.6861289789624,
+            "epoch_time_min": 19.700640054088083
         },
         {
             "arch": "resnet50",
-            "throughput": 1678.1238253043775,
-            "epoch_time_min": 24.229022547025235
+            "throughput": 1757.818523643842,
+            "epoch_time_min": 20.719033000348134
         },
         {
             "arch": "vit_b_16",
-            "throughput": 940.0198624754696,
-            "epoch_time_min": 43.25366050556302
+            "throughput": 850.280115088141,
+            "epoch_time_min": 42.83329617349058
         },
         {
             "arch": "convnext_tiny",
-            "throughput": 1653.529176330614,
-            "epoch_time_min": 24.589405849026512
+            "throughput": 1415.9563213017734,
+            "epoch_time_min": 25.721344261888415
         },
         {
             "arch": "convnext_v2_tiny",
-            "throughput": 1695.5671796332683,
-            "epoch_time_min": 23.979763520071284
+            "throughput": 1442.945680163343,
+            "epoch_time_min": 25.240243275046346
         },
         {
             "arch": "efficientnet_b0",
-            "throughput": 2102.9093715638346,
-            "epoch_time_min": 19.334784727200866
+            "throughput": 1765.0957712503944,
+            "epoch_time_min": 20.633611270962284
         }
     ],
-    "timestamp": "2026-01-23 17:18:12"
+    "timestamp": "2026-01-25 15:27:47"
 }

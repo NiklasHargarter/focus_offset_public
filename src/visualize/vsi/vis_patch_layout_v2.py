@@ -2,18 +2,17 @@ import argparse
 import pickle
 import cv2
 import slideio
+from pathlib import Path
 from src import config
 from src.utils.io_utils import suppress_stderr
+from src.dataset.vsi_prep.preprocess import load_master_index
 
 
 def visualize_patch_layout(dataset_name, patch_size, limit_slides=1):
-    index_path = config.get_master_index_path(dataset_name, patch_size=patch_size)
-    if not index_path.exists():
-        print(f"Error: Master index not found at {index_path}")
+    master = load_master_index(dataset_name, patch_size=patch_size)
+    if master is None:
+        print(f"Error: Master index not found for {dataset_name}")
         return
-
-    with open(index_path, "rb") as f:
-        master = pickle.load(f)
 
     ds_factor = master.config_state.downsample_factor
     stride = master.config_state.stride
@@ -22,13 +21,10 @@ def visualize_patch_layout(dataset_name, patch_size, limit_slides=1):
     print(f"  Patch Size: {patch_size}px (Output) -> {patch_size * ds_factor}px (Raw)")
     print(f"  Stride: {stride}px (Output) -> {stride * ds_factor}px (Raw)")
 
-    vis_root = config.get_vis_dir(dataset_name, patch_size=patch_size)
+    vis_root = config.get_vis_dir("layouts", dataset_name, patch_size=patch_size)
 
     for i, slide_meta in enumerate(master.file_registry[:limit_slides]):
-        vsi_path = slide_meta.path
-        if not vsi_path.exists():
-            # Try to find it in the raws dir if path is relative or wrong
-            vsi_path = config.get_vsi_raw_dir(dataset_name) / vsi_path.name
+        vsi_path = config.get_vsi_raw_dir(dataset_name) / Path(slide_meta.name)
 
         print(f"[{i + 1}/{limit_slides}] Processing {vsi_path.name}...")
 
@@ -57,8 +53,9 @@ def visualize_patch_layout(dataset_name, patch_size, limit_slides=1):
         # Use a subset of patches if there are too many, or just draw all with thin lines
         print(f"  Drawing {len(slide_meta.patches)} patches...")
         for p in slide_meta.patches:
-            # Calculate raw coordinates
-            rx, ry = p.x * ds_factor, p.y * ds_factor
+            x, y, _ = p
+            # Calculate raw coordinates (x, y are already in RAW scale)
+            rx, ry = x, y
             rw, rh = patch_size * ds_factor, patch_size * ds_factor
 
             # Scale to visualization coordinates

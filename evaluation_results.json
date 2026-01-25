@@ -89,5 +89,115 @@
         "mae": 5.048105716705322,
         "std": 3.419227361679077,
         "checkpoint": "best_model-epoch=03-val_loss=1.3913.ckpt"
+    },
+    {
+        "type": "kfold_individual",
+        "mean_mae": 0.34006216526031496,
+        "std_mae": 0.013366624993748053,
+        "folds": [
+            {
+                "mae": 0.3606113791465759,
+                "std": 0.2975250780582428,
+                "ckpt": "best_model-epoch=04-val_loss=0.0847.ckpt"
+            },
+            {
+                "mae": 0.3513612747192383,
+                "std": 0.3010938763618469,
+                "ckpt": "best_model-epoch=05-val_loss=0.0750.ckpt"
+            },
+            {
+                "mae": 0.33018526434898376,
+                "std": 0.2967313826084137,
+                "ckpt": "best_model-epoch=06-val_loss=0.1153.ckpt"
+            },
+            {
+                "mae": 0.3275817334651947,
+                "std": 0.26449647545814514,
+                "ckpt": "best_model-epoch=05-val_loss=0.0767.ckpt"
+            },
+            {
+                "mae": 0.33057117462158203,
+                "std": 0.2823953926563263,
+                "ckpt": "best_model-epoch=06-val_loss=0.0865.ckpt"
+            }
+        ],
+        "ensemble": {
+            "mae": 0.32355445623397827,
+            "std": 0.27052101492881775
+        }
+    },
+    {
+        "dataset": "Jiang2018",
+        "type": "kfold_individual",
+        "mean_mae": 6.030055332183838,
+        "std_mae": 0.12579995527628784,
+        "folds": [
+            {
+                "mae": 6.169038772583008,
+                "std": 4.5893707275390625,
+                "ckpt": "best_model-epoch=04-val_loss=0.0847.ckpt"
+            },
+            {
+                "mae": 6.166092395782471,
+                "std": 4.484692573547363,
+                "ckpt": "best_model-epoch=05-val_loss=0.0750.ckpt"
+            },
+            {
+                "mae": 6.02155876159668,
+                "std": 4.607381343841553,
+                "ckpt": "best_model-epoch=06-val_loss=0.1153.ckpt"
+            },
+            {
+                "mae": 5.950253486633301,
+                "std": 4.4828596115112305,
+                "ckpt": "best_model-epoch=05-val_loss=0.0767.ckpt"
+            },
+            {
+                "mae": 5.8433332443237305,
+                "std": 4.33439302444458,
+                "ckpt": "best_model-epoch=06-val_loss=0.0865.ckpt"
+            }
+        ],
+        "ensemble": {
+            "mae": 5.967646598815918,
+            "std": 4.298976898193359
+        }
+    },
+    {
+        "dataset": "ZStack_IHC",
+        "type": "kfold_individual",
+        "mean_mae": 1.767038106918335,
+        "std_mae": 0.22643255170388055,
+        "folds": [
+            {
+                "mae": 1.4621275663375854,
+                "std": 1.461977243423462,
+                "ckpt": "best_model-epoch=04-val_loss=0.0847.ckpt"
+            },
+            {
+                "mae": 1.716156244277954,
+                "std": 2.0218660831451416,
+                "ckpt": "best_model-epoch=05-val_loss=0.0750.ckpt"
+            },
+            {
+                "mae": 2.0612406730651855,
+                "std": 2.0464444160461426,
+                "ckpt": "best_model-epoch=06-val_loss=0.1153.ckpt"
+            },
+            {
+                "mae": 1.6076393127441406,
+                "std": 1.71953284740448,
+                "ckpt": "best_model-epoch=05-val_loss=0.0767.ckpt"
+            },
+            {
+                "mae": 1.988026738166809,
+                "std": 2.2261946201324463,
+                "ckpt": "best_model-epoch=06-val_loss=0.0865.ckpt"
+            }
+        ],
+        "ensemble": {
+            "mae": 1.7503130435943604,
+            "std": 1.7528774738311768
+        }
     }
 ]

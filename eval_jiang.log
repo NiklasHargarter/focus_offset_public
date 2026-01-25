@@ -1,0 +1,62 @@
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+Found 5 checkpoints.
+  Loading weights from logs/focus_convnextv2_kfold_fold_0/version_0/checkpoints/best_model-epoch=04-val_loss=0.0847.ckpt...
+  Loading weights from logs/focus_convnextv2_kfold_fold_1/version_0/checkpoints/best_model-epoch=05-val_loss=0.0750.ckpt...
+  Loading weights from logs/focus_convnextv2_kfold_fold_2/version_0/checkpoints/best_model-epoch=06-val_loss=0.1153.ckpt...
+  Loading weights from logs/focus_convnextv2_kfold_fold_3/version_0/checkpoints/best_model-epoch=05-val_loss=0.0767.ckpt...
+  Loading weights from logs/focus_convnextv2_kfold_fold_4/version_0/checkpoints/best_model-epoch=06-val_loss=0.0865.ckpt...
+
+
+############################################################
+EVALUATING ON DATASET: Jiang2018
+############################################################
+
+--- Testing Fold 0 ---
+Required data already exists in /home/niklas/Jiang2018/raws. Skipping extraction.
+Loading Jiang 2018 dataset index from cache: /home/niklas/focus_offset_public/cache/jiang2018_index_v5.pkl
+Jiang2018Dataset: Loaded 128699 samples from cache.
+/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:378: You have overridden `on_after_batch_transfer` in `LightningModule` but have passed in a `LightningDataModule`. It will use the implementation from `LightningModule` instance.
+Testing ━━━━━━━━━━━ 126/126 0:00:37 •  3.61it/s 
+                            0:00:00             
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+--- Testing Fold 1 ---
+Required data already exists in /home/niklas/Jiang2018/raws. Skipping extraction.
+Testing ━━━━━━━━━━━ 126/126 0:00:32 •  3.96it/s 
+                            0:00:00             
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+--- Testing Fold 2 ---
+Required data already exists in /home/niklas/Jiang2018/raws. Skipping extraction.
+Testing ━━━━━━━━━━━ 126/126 0:00:33 •  3.96it/s 
+                            0:00:00             
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+--- Testing Fold 3 ---
+Required data already exists in /home/niklas/Jiang2018/raws. Skipping extraction.
+Testing ━━━━━━━━━━━ 126/126 0:00:32 •  3.96it/s 
+                            0:00:00             
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+--- Testing Fold 4 ---
+Required data already exists in /home/niklas/Jiang2018/raws. Skipping extraction.
+Testing ━━━━━━━━━━━ 126/126 0:00:31 •  3.97it/s 
+                            0:00:00             
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+========================================
+K-FOLD INDIVIDUAL SUMMARY (Jiang2018)
+MEAN MAE: 6.0301 ± 0.1258
+========================================
+
+--- Testing Ensemble ---
+Required data already exists in /home/niklas/Jiang2018/raws. Skipping extraction.
+Testing ━━━━━━━━━━━ 126/126 0:02:31 •  0.84it/s 
+                            0:00:00             
+
+========================================
+ENSEMBLE SUMMARY (Jiang2018)
+MAE: 5.9676
+========================================

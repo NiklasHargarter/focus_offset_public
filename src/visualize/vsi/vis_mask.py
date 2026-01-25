@@ -5,8 +5,7 @@ import slideio
 from src import config
 from src.utils.io_utils import suppress_stderr
 from src.dataset.vsi_prep.preprocess import (
-    select_best_focus_slice,
-    generate_tissue_mask,
+    detect_tissue,
 )
 
 
@@ -25,10 +24,9 @@ def save_mask(vsi_path: Path):
     ds = 8
     dw, dh = width // ds, height // ds
 
-    best_gray = select_best_focus_slice(scene, width, height, num_z, dw, dh)
-    mask = generate_tissue_mask(best_gray)
+    best_z, mask = detect_tissue(scene)
     cv2.imwrite(str(out_path), mask)
-    print(f"Saved: {out_path}")
+    print(f"Saved: {out_path} (Best Z: {best_z})")
 
 
 if __name__ == "__main__":

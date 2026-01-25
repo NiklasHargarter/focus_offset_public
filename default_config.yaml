@@ -3,8 +3,8 @@
 
 fit:
   trainer:
-    max_epochs: 100
-    precision: 16-mixed
+    max_epochs: 30
+    precision: bf16-mixed
     devices: 1
     accelerator: auto
     callbacks:
@@ -17,7 +17,7 @@ fit:
       - class_path: lightning.pytorch.callbacks.EarlyStopping
         init_args:
           monitor: val_loss
-          patience: 25
+          patience: 6
           mode: min
       - class_path: lightning.pytorch.callbacks.LearningRateMonitor
         init_args:
@@ -26,25 +26,28 @@ fit:
       - class_path: lightning.pytorch.loggers.TensorBoardLogger
         init_args:
           save_dir: logs
-          name: focus_convnextv2
+          name: focus_efficientnet_b0
+    gradient_clip_val: 1.0
+    log_every_n_steps: 100
 
   model:
     learning_rate: 1e-4
-    weight_decay: 0.05
+    weight_decay: 0.01
     backbone:
-      class_path: src.models.architectures.ConvNeXtV2FocusRegressor
+      class_path: src.models.architectures.EfficientNetFocusRegressor
       init_args:
-        version: tiny
+        version: b0
         pretrained: true
 
   data:
     class_path: src.dataset.vsi_datamodule.VSIDataModule
     init_args:
       dataset_name: ZStack_HE
-      batch_size: 128
+      batch_size: 512
       num_workers: 16
       patch_size: 224
       stride: 448
       downsample_factor: 2
       min_tissue_coverage: 0.05
       split_ratio: 0.3
+      prefetch_factor: 4

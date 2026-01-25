@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import lightning as L
+import math
 
 
 class FocusOffsetRegressor(L.LightningModule):
@@ -34,16 +35,26 @@ class FocusOffsetRegressor(L.LightningModule):
         State-of-the-art GPU normalization hook.
         Moves float conversion to GPU to reduce PCIe bandwidth usage.
         """
-        images, targets, metadata = batch
+        # Handle batches with and without metadata
+        if len(batch) == 3:
+            images, targets, metadata = batch
+        else:
+            images, targets = batch
+            metadata = None
 
         # If data is still uint8, move to float efficiently on GPU
         if images.dtype == torch.uint8:
             images = images.float() / 255.0
 
-        return images, targets, metadata
+        return (
+            (images, targets, metadata) if metadata is not None else (images, targets)
+        )
 
     def training_step(self, batch, batch_idx):
-        images, targets, _ = batch
+        if len(batch) == 3:
+            images, targets, _ = batch
+        else:
+            images, targets = batch
 
         # Optimization: Channels Last for Tensor Cores
         if images.device.type == "cuda":
@@ -55,7 +66,7 @@ class FocusOffsetRegressor(L.LightningModule):
         self.log(
             "train_loss",
             loss,
-            on_step=True,
+            on_step=False,  # Focus on epoch for cross-BS comparison
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
@@ -64,7 +75,10 @@ class FocusOffsetRegressor(L.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
-        images, targets, _ = batch
+        if len(batch) == 3:
+            images, targets, _ = batch
+        else:
+            images, targets = batch
 
         if images.device.type == "cuda":
             images = images.to(memory_format=torch.channels_last)
@@ -100,7 +114,11 @@ class FocusOffsetRegressor(L.LightningModule):
             del self.test_step_outputs
 
     def validation_step(self, batch, batch_idx):
-        images, targets, metadata = batch
+        if len(batch) == 3:
+            images, targets, metadata = batch
+        else:
+            images, targets = batch
+            metadata = None
 
         if images.device.type == "cuda":
             images = images.to(memory_format=torch.channels_last)
@@ -191,24 +209,24 @@ class FocusOffsetRegressor(L.LightningModule):
 
     def configure_optimizers(self):
         """
-        Configures AdamW with CosineAnnealing and Linear Warmup.
-        This combo is far more stable for ConvNeXt architectures.
+        Configures a simple AdamW optimizer and CosineAnnealingLR.
         """
         optimizer = torch.optim.AdamW(
-            self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
+            self.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
         )
 
-        # Warmup period (10% of training, max 5 epochs)
+        # Warmup period (1 epoch for early peak protection)
         max_epochs = self.trainer.max_epochs
-        warmup_steps = max(1, min(5, max_epochs // 10))
+        warmup_steps = 1
         main_steps = max(1, max_epochs - warmup_steps)
 
         def lr_lambda(epoch):
             if epoch < warmup_steps:
                 return float(epoch + 1) / warmup_steps
-
             progress = float(epoch - warmup_steps) / main_steps
-            return 0.5 * (1.0 + torch.cos(torch.tensor(3.14159 * min(progress, 1.0))))
+            return 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
@@ -219,3 +237,73 @@ class FocusOffsetRegressor(L.LightningModule):
                 "interval": "epoch",
             },
         }
+
+
+class FocusEnsemble(L.LightningModule):
+    """
+    Ensemble wrapper that averages predictions from multiple FocusOffsetRegressor models.
+    """
+
+    def __init__(self, models: list[FocusOffsetRegressor]):
+        super().__init__()
+        self.models = nn.ModuleList(models)
+        # Optimization: Use channels_last for all models
+        for m in self.models:
+            m.to(memory_format=torch.channels_last)
+
+    def forward(self, x):
+        # Average predictions from all models
+        preds = torch.stack([model(x) for model in self.models])
+        return torch.mean(preds, dim=0)
+
+    def on_after_batch_transfer(self, batch, dataloader_idx):
+        if len(batch) == 3:
+            images, targets, metadata = batch
+        else:
+            images, targets = batch
+            metadata = None
+
+        if images.dtype == torch.uint8:
+            images = images.float() / 255.0
+
+        return (
+            (images, targets, metadata) if metadata is not None else (images, targets)
+        )
+
+    def test_step(self, batch, batch_idx):
+        if len(batch) == 3:
+            images, targets, _ = batch
+        else:
+            images, targets = batch
+        if images.device.type == "cuda":
+            images = images.to(memory_format=torch.channels_last)
+
+        targets = targets.unsqueeze(1)
+        outputs = self(images)
+        loss = nn.functional.huber_loss(outputs, targets)
+
+        abs_err = torch.abs(outputs - targets)
+        self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        self.log(
+            "test_mae",
+            abs_err.mean(),
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True,
+            prog_bar=True,
+        )
+
+        if not hasattr(self, "test_step_outputs"):
+            self.test_step_outputs = []
+        self.test_step_outputs.append(abs_err.detach().cpu())
+
+        return abs_err
+
+    def on_test_epoch_end(self):
+        if hasattr(self, "test_step_outputs"):
+            all_errors = torch.cat(self.test_step_outputs)
+            mae = all_errors.mean()
+            std = all_errors.std()
+            self.log("test_mae_final", mae)
+            self.log("test_std", std)
+            del self.test_step_outputs

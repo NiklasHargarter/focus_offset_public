@@ -87,6 +87,29 @@ class EfficientNetFocusRegressor(BaseFocusRegressor):
         return self.model(x)
 
 
+class MobileNetV3FocusRegressor(BaseFocusRegressor):
+    def __init__(self, version: str = "small", pretrained: bool = True):
+        super().__init__()
+        if version == "small":
+            weights = (
+                models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None
+            )
+            self.model = models.mobilenet_v3_small(weights=weights)
+        elif version == "large":
+            weights = (
+                models.MobileNet_V3_Large_Weights.IMAGENET1K_V1 if pretrained else None
+            )
+            self.model = models.mobilenet_v3_large(weights=weights)
+        else:
+            raise ValueError(f"Unsupported MobileNet version: {version}")
+
+        in_features = self.model.classifier[3].in_features
+        self.model.classifier[3] = nn.Linear(in_features, 1)
+
+    def forward(self, x):
+        return self.model(x)
+
+
 class Jiang2018ResNet(BaseFocusRegressor):
     """
     Implementation of the ResNet-50 based regressor from:
@@ -122,7 +145,9 @@ class ConvNeXtV2FocusRegressor(BaseFocusRegressor):
         # but configured with V2-style global response normalization metrics
         if version == "tiny":
             weights = models.ConvNeXt_Tiny_Weights.IMAGENET1K_V1 if pretrained else None
-            self.model = models.convnext_tiny(weights=weights)
+            self.model = models.convnext_tiny(
+                weights=weights, stochastic_depth_prob=0.1
+            )
         else:
             raise ValueError(f"Unsupported ConvNeXt version: {version}")
 
