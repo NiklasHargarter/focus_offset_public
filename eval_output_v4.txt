@@ -1,0 +1,42 @@
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+ Loading weights into EfficientNetFocusRegressor...
+
+--- Testing on: ZStack_HE ---
+Data environment for ZStack_HE (p224) is OK.
+/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:378: You have overridden `on_after_batch_transfer` in `LightningModule` but have passed in a `LightningDataModule`. It will use the implementation from `LightningModule` instance.
+/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/utilities/data.py:79: Trying to infer the `batch_size` from an ambiguous collection. The batch size we found is 512. To avoid any miscalculations, use `self.log(..., batch_size=batch_size)`.
+/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/utilities/data.py:79: Trying to infer the `batch_size` from an ambiguous collection. The batch size we found is 47. To avoid any miscalculations, use `self.log(..., batch_size=batch_size)`.
+Testing ━━━━━━━━━ 2100/2100 0:06:19 •  6.50it/s 
+                            0:00:00             
+ MAE: 0.4784
+
+--- Testing on: ZStack_IHC ---
+
+Traceback (most recent call last):
+  File "/home/niklas/focus_offset_public/src/evaluate.py", line 162, in <module>
+    evaluate(args.model, args.ckpt, args.datasets, args.limit_batches)
+  File "/home/niklas/focus_offset_public/src/evaluate.py", line 114, in evaluate
+    test_results = trainer.test(model, datamodule=datamodule, verbose=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/trainer.py", line 821, in test
+    return call._call_and_handle_interrupt(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/call.py", line 49, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/trainer.py", line 864, in _test_impl
+    results = self._run(model, ckpt_path=ckpt_path, weights_only=weights_only)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/trainer.py", line 1037, in _run
+    self._data_connector.prepare_data()
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/connectors/data_connector.py", line 95, in prepare_data
+    call._call_lightning_datamodule_hook(trainer, "prepare_data")
+  File "/home/niklas/focus_offset_public/.venv/lib/python3.12/site-packages/lightning/pytorch/trainer/call.py", line 199, in _call_lightning_datamodule_hook
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/niklas/focus_offset_public/src/dataset/vsi_datamodule.py", line 107, in prepare_data
+    if manifest_data.config_state != expected_config:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'dict' object has no attribute 'config_state'

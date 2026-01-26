@@ -104,11 +104,16 @@ class BaseVSIDataModule(L.LightningDataModule):
             with open(master_index_path, "rb") as f:
                 manifest_data = pickle.load(f)
 
-            if manifest_data.config_state != expected_config:
+            if isinstance(manifest_data, dict):
+                manifest_config = manifest_data.get("config_state")
+            else:
+                manifest_config = manifest_data.config_state
+
+            if manifest_config != expected_config:
                 missing.append(
                     f"Master Index Configuration Mismatch!\n"
                     f"  Expected: {expected_config}\n"
-                    f"  Found:    {manifest_data.config_state}"
+                    f"  Found:    {manifest_config}"
                 )
 
         # Also check if any slide indices exist

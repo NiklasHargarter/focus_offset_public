@@ -8,7 +8,7 @@ import lightning as L
 from lightning.pytorch.cli import LightningArgumentParser
 
 from src import config
-from src.dataset.vsi_datamodule import VSIDataModule
+from src.dataset.vsi_datamodule import VSIDataModule, IHCDataModule
 from src.dataset.jiang2018 import Jiang2018DataModule
 from src.models.lightning_module import FocusOffsetRegressor
 
@@ -39,8 +39,41 @@ def evaluate(
     model = cfg_init.model
 
     print(f" Loading weights into {model.backbone.__class__.__name__}...")
-    ckpt = torch.load(ckpt_path, map_location="cpu")
-    model.load_state_dict(ckpt["state_dict"])
+
+    # Handle missing src.models.factory for older checkpoints
+    import sys
+    from types import ModuleType
+
+    if "src.models.factory" not in sys.modules:
+        m = ModuleType("src.models.factory")
+        sys.modules["src.models.factory"] = m
+
+        class ModelArch:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        m.ModelArch = ModelArch
+
+    # Handle PyTorch 2.6+ weights_only security feature
+    try:
+        torch.serialization.add_safe_globals(
+            [sys.modules["src.models.factory"].ModelArch]
+        )
+    except Exception:
+        pass
+
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    state_dict = ckpt["state_dict"]
+
+    # Handle checkpoints saved from compiled models (_orig_mod prefix)
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        if k.startswith("backbone._orig_mod."):
+            new_state_dict[k.replace("backbone._orig_mod.", "backbone.")] = v
+        else:
+            new_state_dict[k] = v
+
+    model.load_state_dict(new_state_dict)
 
     trainer = L.Trainer(
         accelerator="auto",
@@ -59,13 +92,24 @@ def evaluate(
             except json.JSONDecodeError:
                 all_results = []
 
+    # Load data defaults from default_config.yaml
+    default_cfg_path = config.PROJECT_ROOT / "default_config.yaml"
+    with open(default_cfg_path, "r") as f:
+        default_cfg = yaml.safe_load(f)
+    data_kwargs = default_cfg["fit"]["data"]["init_args"]
+
     for ds_name in dataset_names:
         print(f"\n--- Testing on: {ds_name} ---")
-        datamodule = (
-            Jiang2018DataModule()
-            if ds_name == "Jiang2018"
-            else VSIDataModule(dataset_name=ds_name)
-        )
+        # Ensure dataset_name is correct
+        current_data_kwargs = data_kwargs.copy()
+        current_data_kwargs["dataset_name"] = ds_name
+
+        if ds_name == "Jiang2018":
+            datamodule = Jiang2018DataModule()
+        elif ds_name == "ZStack_IHC":
+            datamodule = IHCDataModule(**current_data_kwargs)
+        else:
+            datamodule = VSIDataModule(**current_data_kwargs)
 
         test_results = trainer.test(model, datamodule=datamodule, verbose=False)
 
