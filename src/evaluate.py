@@ -17,24 +17,29 @@ torch.set_float32_matmul_precision("medium")
 
 
 def evaluate(
-    model_config: str,
     ckpt_path: str,
     dataset_names: list[str],
+    model_config: str = None,
     limit_batches: int = None,
 ):
     ckpt_path = Path(ckpt_path)
 
-    # 1. Instantiate the model using the same logic as train.py
-    with open(model_config, "r") as f:
-        full_cfg = yaml.safe_load(f)
-
-    parser = LightningArgumentParser()
-    parser.add_lightning_class_args(FocusOffsetRegressor, "model")
-
-    # Instantiate only the model
-    model_cfg = {"model": full_cfg["model"]}
-    cfg_init = parser.instantiate_classes(model_cfg)
-    model = cfg_init.model
+    # 1. Instantiate the model
+    if model_config and Path(model_config).exists():
+        with open(model_config, "r") as f:
+            full_cfg = yaml.safe_load(f)
+        
+        parser = LightningArgumentParser()
+        parser.add_lightning_class_args(FocusOffsetRegressor, "model")
+        
+        # Instantiate with provided config
+        model_cfg = {"model": full_cfg.get("model", {})}
+        cfg_init = parser.instantiate_classes(model_cfg)
+        model = cfg_init.model
+    else:
+        # Use default architecture if no config provided
+        print(" No model config provided or found. Using default FocusOffsetRegressor.")
+        model = FocusOffsetRegressor()
 
     print(f" Loading weights into {model.backbone.__class__.__name__}...")
 
@@ -69,11 +74,8 @@ def evaluate(
             except json.JSONDecodeError:
                 all_results = []
 
-    # Load data defaults from default_config.yaml
-    default_cfg_path = config.PROJECT_ROOT / "default_config.yaml"
-    with open(default_cfg_path, "r") as f:
-        default_cfg = yaml.safe_load(f)
-    data_kwargs = default_cfg["fit"]["data"]["init_args"]
+    # Data loading now uses defaults from VSIDataModule
+    data_kwargs = {}
 
     for ds_name in dataset_names:
         print(f"\n--- Testing on: {ds_name} ---")
@@ -119,8 +121,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        required=True,
-        help="Path to the model YAML config used for training.",
+        default=None,
+        help="Optional path to model YAML config. Defaults to FocusOffsetRegressor.",
     )
     parser.add_argument(
         "--ckpt", type=str, required=True, help="Path to the checkpoint file."
@@ -136,4 +138,4 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    evaluate(args.model, args.ckpt, args.datasets, args.limit_batches)
+    evaluate(args.ckpt, args.datasets, args.model, args.limit_batches)

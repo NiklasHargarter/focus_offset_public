@@ -34,6 +34,12 @@ def cli_main():
         subclass_mode_data=False,
         seed_everything_default=42,
         save_config_callback=None,
+        trainer_defaults={
+            "logger": {
+                "class_path": "lightning.pytorch.loggers.TensorBoardLogger",
+                "init_args": {"save_dir": "logs", "name": ""},
+            }
+        },
         run=True,
     )
 

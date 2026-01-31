@@ -25,8 +25,8 @@ class BaseVSIDataModule(L.LightningDataModule):
     def __init__(
         self,
         dataset_name: str = "ZStack_HE",
-        batch_size: int = 64,
-        num_workers: int = 8,
+        batch_size: int = 32,
+        num_workers: int = 4,
         patch_size: int = 224,
         stride: int = 448,
         min_tissue_coverage: float = 0.05,
@@ -67,7 +67,7 @@ class BaseVSIDataModule(L.LightningDataModule):
                 
                 # 2. Physics Distortion (PSF/Aberration)
                 # alpha=1 is subtle, but alpha_affine adds shifts
-                A.ElasticTransform(alpha=1, sigma=20, alpha_affine=20, p=0.2),
+                A.ElasticTransform(alpha=1, sigma=20, p=0.2),
 
                 # 3. Aggressive Chroma/Stain Destruction
                 A.Compose([
@@ -79,7 +79,7 @@ class BaseVSIDataModule(L.LightningDataModule):
                 ], p=1.0),
 
                 # 4. Sensor Robustness (ISO Grain)
-                A.GaussNoise(var_limit=(10.0, 50.0), p=0.4),
+                A.GaussNoise(std_range=(3.16 / 255, 7.07 / 255), p=0.4),
 
                 A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
                 ToTensorV2(),

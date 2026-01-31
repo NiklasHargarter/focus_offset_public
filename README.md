@@ -37,20 +37,34 @@ uv run python -m src.dataset.vsi_prep.sync --dataset ZStack_HE
 - `--skip-preprocess`: Only download and unzip.
 - `--skip-split`: Keep existing training splits.
 
-##  Training
-
-Training is powered by PyTorch Lightning and `LightningCLI` for configuration management.
+Training is powered by PyTorch Lightning. We provide a default configuration for stable training.
 
 ```bash
-uv run python -m src.train fit --config configs/trainer.yaml --config configs/models/resnet50.yaml --config configs/data/zstack_he.yaml
+# Training with default configuration (Early Stopping, Checkpointing)
+uv run python -m src.train fit -c configs/trainer.yaml
+
+# Multimodal Version (Custom overrides)
+uv run python -m src.train fit -c configs/trainer.yaml --model.use_transforms=True
+
+# RGB Only Version
+uv run python -m src.train fit -c configs/trainer.yaml --model.use_transforms=False
 ```
 
-##  Evaluation
+**Note on Memory:** The default batch size has been set to **32** to ensure stability on consumer GPUs.
 
-Run evaluation on multiple datasets using a trained checkpoint:
+
+**Common CLI Overrides:**
+- `--data.batch_size 32`: Change batch size if encountering memory issues.
+- `--data.num_workers 4`: Adjust number of data loading workers.
+- `--trainer.max_epochs 50`: Set training duration.
+
+## Evaluation
+
+Run evaluation on multiple datasets using a trained checkpoint. The `--model` config is now optional and only needed for custom architectures.
 
 ```bash
-uv run python -m src.evaluate --model configs/models/resnet50.yaml --ckpt checkpoints/resnet50/best_model.ckpt --datasets ZStack_HE ZStack_IHC Jiang2018
+# Standard evaluation
+uv run python -m src.evaluate --ckpt checkpoints/convnextv2/best_model.ckpt --datasets ZStack_HE ZStack_IHC Jiang2018
 ```
 
 ##  Project Structure
