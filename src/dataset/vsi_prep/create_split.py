@@ -30,33 +30,43 @@ def create_split(
     file_registry = master_index.file_registry
     slides = []
     for entry in file_registry:
-        slides.append({"name": entry.name, "count": entry.total_samples})
+        slides.append(
+            {
+                "name": entry.name,
+                "samples": entry.total_samples,
+                "patches": entry.patch_count,
+            }
+        )
 
-    total_patches = sum(s["count"] for s in slides)
-    target_test_count = total_patches * split_ratio
+    total_samples = sum(s["samples"] for s in slides)
+    total_patches = sum(s["patches"] for s in slides)
+    target_test_samples = total_samples * split_ratio
 
-    print(f"Total slides: {len(slides)}, Total patches: {total_patches}")
-    print(f"Target test patches: {target_test_count:.0f} ({split_ratio:.1%})")
+    print(f"Total slides: {len(slides)}")
+    print(f"Total patches: {total_patches} | Total samples (patches * Z): {total_samples}")
+    print(
+        f"Target test samples: {target_test_samples:.0f} ({split_ratio:.1%} of samples)"
+    )
 
     random.seed(seed)
     random.shuffle(slides)
 
     test_files = []
     train_pool_files = []
-    current_test_count = 0
+    current_test_samples = 0
 
     for slide in slides:
-        if current_test_count < target_test_count:
+        if current_test_samples < target_test_samples:
             test_files.append(slide["name"])
-            current_test_count += slide["count"]
+            current_test_samples += slide["samples"]
         else:
             train_pool_files.append(slide["name"])
 
     print(
-        f"Test split: {len(test_files)} slides, {current_test_count} patches ({current_test_count / total_patches:.2%})"
+        f"Test split: {len(test_files)} slides, {current_test_samples} samples ({current_test_samples / total_samples:.2%})"
     )
     print(
-        f"Train pool: {len(train_pool_files)} slides, {total_patches - current_test_count} patches"
+        f"Train pool: {len(train_pool_files)} slides, {total_samples - current_test_samples} samples"
     )
 
     split_data = {
@@ -65,6 +75,7 @@ def create_split(
         "seed": seed,
         "total_slides": len(file_registry),
         "total_patches": total_patches,
+        "total_samples": total_samples,
     }
 
     with open(split_file, "w") as f:

@@ -20,7 +20,7 @@ class FocusOffsetRegressor(L.LightningModule):
         super().__init__()
         self.save_hyperparameters(ignore=["backbone"])
         self.backbone = backbone
-        # Optimization: Use channels_last memory format for Blackwell/Ada GPUs
+        # Use channels_last memory format for modern NVIDIA GPUs
         self.backbone.to(memory_format=torch.channels_last)
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
@@ -32,7 +32,7 @@ class FocusOffsetRegressor(L.LightningModule):
 
     def on_after_batch_transfer(self, batch, dataloader_idx):
         """
-        State-of-the-art GPU normalization hook.
+        Efficient normalization hook.
         Moves float conversion to GPU to reduce PCIe bandwidth usage.
         """
         # Handle batches with and without metadata
@@ -56,7 +56,7 @@ class FocusOffsetRegressor(L.LightningModule):
         else:
             images, targets = batch
 
-        # Optimization: Channels Last for Tensor Cores
+        # Ensure channels_last for Tensor Cores
         if images.device.type == "cuda":
             images = images.to(memory_format=torch.channels_last)
 

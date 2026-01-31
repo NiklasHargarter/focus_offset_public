@@ -44,7 +44,7 @@ fit:
     init_args:
       dataset_name: ZStack_HE
       batch_size: 512
-      num_workers: 24
+      num_workers: 12
       patch_size: 224
       stride: 448
       downsample_factor: 2

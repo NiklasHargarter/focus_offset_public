@@ -25,8 +25,6 @@ def evaluate(
     ckpt_path = Path(ckpt_path)
 
     # 1. Instantiate the model using the same logic as train.py
-    # We manually load the YAML and then use the parser only for the "model" part
-    # to avoid validation errors on optimizer/scheduler sections.
     with open(model_config, "r") as f:
         full_cfg = yaml.safe_load(f)
 
@@ -40,28 +38,7 @@ def evaluate(
 
     print(f" Loading weights into {model.backbone.__class__.__name__}...")
 
-    # Handle missing src.models.factory for older checkpoints
-    import sys
-    from types import ModuleType
-
-    if "src.models.factory" not in sys.modules:
-        m = ModuleType("src.models.factory")
-        sys.modules["src.models.factory"] = m
-
-        class ModelArch:
-            def __init__(self, *args, **kwargs):
-                pass
-
-        m.ModelArch = ModelArch
-
-    # Handle PyTorch 2.6+ weights_only security feature
-    try:
-        torch.serialization.add_safe_globals(
-            [sys.modules["src.models.factory"].ModelArch]
-        )
-    except Exception:
-        pass
-
+    # Load checkpoint
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     state_dict = ckpt["state_dict"]
 

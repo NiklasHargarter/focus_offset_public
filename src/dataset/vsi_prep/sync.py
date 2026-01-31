@@ -15,6 +15,8 @@ def sync(
     force: bool = False,
     skip_preprocess: bool = False,
     skip_split: bool = False,
+    limit: int = None,
+    exclude: str = None,
 ):
     """
     Orchestrates the full dataset preparation pipeline:
@@ -26,7 +28,7 @@ def sync(
     print(f"=== Syncing Dataset: {dataset_name} ===")
 
     print("\n[Step 1/2] Downloading missing files...")
-    download_dataset(dataset_name=dataset_name, force=force)
+    download_dataset(dataset_name=dataset_name, force=force, limit=limit, exclude=exclude)
 
     print("\n[Step 2/2] Extracting and verifying ZIP structures...")
     fix_zip_structure(dataset_name=dataset_name)
@@ -71,6 +73,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip-split", action="store_true", help="Skip split generation"
     )
+    parser.add_argument(
+        "--limit", type=int, default=None, help="Limit number of slides to download"
+    )
+    parser.add_argument(
+        "--exclude",
+        type=str,
+        default=None,
+        help="Exclude slides containing this string in their name",
+    )
 
     args = parser.parse_args()
     sync(
@@ -82,4 +93,6 @@ if __name__ == "__main__":
         args.force,
         args.skip_preprocess,
         args.skip_split,
+        args.limit,
+        args.exclude,
     )

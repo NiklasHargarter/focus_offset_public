@@ -60,7 +60,7 @@ class Jiang2018Dataset(Dataset):
                     seg_groups[seg_id].append(f)
 
             for seg_id, group_files in seg_groups.items():
-                best_score, best_abs_nm, stack = -1, 0, []
+                stack = []
                 for f in group_files:
                     match = re.search(r"defocus(-?\d+)", f.name)
                     if match:
@@ -70,15 +70,14 @@ class Jiang2018Dataset(Dataset):
                         if img is None:
                             continue
                         score = _compute_brenner(img)
-                        if score > best_score:
-                            best_score, best_abs_nm = score, abs_nm
                         stack.append((f, abs_nm, score))
 
                 for f, abs_nm, score in stack:
+                    # User feedback: filenames already encode optimal Z offset (defocus 0 is optimal)
                     self.samples.append(
                         {
                             "path": f,
-                            "offset": (abs_nm - best_abs_nm) / 1000.0,
+                            "offset": abs_nm / 1000.0,
                             "abs_nm": abs_nm,
                             "score": score,
                         }

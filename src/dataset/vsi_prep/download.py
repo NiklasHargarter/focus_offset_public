@@ -14,7 +14,11 @@ from src.dataset.vsi_prep.fix_zip import (
 
 
 def download_dataset(
-    dataset_name: str = config.DATASET_NAME, force: bool = False, keep_zip: bool = False
+    dataset_name: str = config.DATASET_NAME,
+    force: bool = False,
+    keep_zip: bool = False,
+    limit: int = None,
+    exclude: str = None,
 ) -> None:
     """Download, extract, and verify VSI files one-by-one to save space."""
     print(f"Fetching full image list for {dataset_name} from EXACT...")
@@ -27,6 +31,17 @@ def download_dataset(
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Total images in dataset: {len(all_images)}")
+
+    if exclude:
+        print(f"Excluding images containing: '{exclude}' (case-insensitive)")
+        all_images = [
+            img for img in all_images if exclude.lower() not in img["name"].lower()
+        ]
+        print(f"Images remaining after exclusion: {len(all_images)}")
+
+    if limit is not None:
+        print(f"Limiting download to the first {limit} slides.")
+        all_images = all_images[:limit]
 
     configuration = Configuration()
     configuration.username = os.environ.get("EXACT_USERNAME", "niklas.hargarter")
@@ -106,7 +121,20 @@ if __name__ == "__main__":
         action="store_true",
         help="Keep the ZIP file after successful extraction",
     )
+    parser.add_argument(
+        "--limit", type=int, default=None, help="Limit number of slides to download"
+    )
+    parser.add_argument(
+        "--exclude",
+        type=str,
+        default=None,
+        help="Exclude slides containing this string in their name",
+    )
     args = parser.parse_args()
     download_dataset(
-        dataset_name=args.dataset, force=args.force, keep_zip=args.keep_zip
+        dataset_name=args.dataset,
+        force=args.force,
+        keep_zip=args.keep_zip,
+        limit=args.limit,
+        exclude=args.exclude,
     )

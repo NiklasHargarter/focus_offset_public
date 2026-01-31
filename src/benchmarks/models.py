@@ -85,7 +85,7 @@ def benchmark_architecture(
         limit_val_batches=1,
         accelerator="auto",
         devices=1,
-        precision="16-mixed",
+        precision="bf16-mixed",
         logger=False,
         enable_checkpointing=False,
         enable_progress_bar=False,
@@ -125,7 +125,7 @@ def main():
     datamodule = VSIDataModule(
         dataset_name="ZStack_HE",
         batch_size=128,
-        num_workers=16,
+        num_workers=8,
         patch_size=224,
         stride=448,
         min_tissue_coverage=0.05,

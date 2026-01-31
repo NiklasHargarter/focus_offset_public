@@ -43,6 +43,10 @@ class MasterIndex:
     config_state: PreprocessConfig
 
     @property
+    def total_patches(self) -> int:
+        return sum(slide.patch_count for slide in self.file_registry)
+
+    @property
     def total_samples(self) -> int:
         return sum(slide.total_samples for slide in self.file_registry)
 
@@ -56,6 +60,10 @@ class ProcessedIndex:
     patch_size: int
     downsample_factor: int = 1
     dataset_name: str = ""
+
+    @property
+    def total_patches(self) -> int:
+        return sum(slide.patch_count for slide in self.file_registry)
 
     @property
     def total_samples(self) -> int:

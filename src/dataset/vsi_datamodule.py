@@ -346,13 +346,8 @@ class IHCDataModule(BaseVSIDataModule):
     def setup(self, stage: Optional[str] = None):
         master_index, splits = self._load_data_indices()
 
-        if stage == "fit" or stage is None:
-            train_index = self._filter_index(master_index, splits.get("train_pool", []))
-            self.train_dataset = VSIDatasetLightning(
-                index_data=train_index, transform=self.train_transform
-            )
-
-            self.val_dataset = None
+        if stage == "fit":
+             raise RuntimeError(f"{self.__class__.__name__} is for evaluation only. Training is disabled.")
 
         if stage == "test" or stage == "predict" or stage is None:
             test_files = splits.get("test", [])

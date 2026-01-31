@@ -6,8 +6,7 @@ from lightning.pytorch.cli import LightningCLI
 
 from src.models.lightning_module import FocusOffsetRegressor
 
-# Best practices for performance & stability (Blackwell / RTX 5090)
-os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+# General best practices for training performance
 torch.set_float32_matmul_precision("medium")
 
 warnings.filterwarnings(
@@ -17,11 +16,11 @@ warnings.filterwarnings(
 
 class FocusCLI(LightningCLI):
     def add_arguments_to_parser(self, parser):
-        parser.add_argument("--compile", action="store_true", default=True)
+        parser.add_argument("--compile", action="store_true", default=False)
 
     def before_fit(self):
         if self.config["fit"].get("compile", True):
-            print("Compiling backbone for maximum performance...")
+            print("Compiling model for optimized performance...")
             # We compile the backbone inside the lightning module
             self.model.backbone = torch.compile(self.model.backbone)
 

@@ -90,17 +90,17 @@ class SlidePreprocessor:
         self.cfg = config
         self.ds = self.cfg.downsample_factor
 
-    def process(self, vsi_path: Path) -> SlideMetadata:
+    def process(self, slide_path: Path) -> SlideMetadata:
         with suppress_stderr():
-            slide = slideio.open_slide(str(vsi_path), "VSI")
+            slide = slideio.open_slide(str(slide_path), "VSI")
         scene = slide.get_scene(0)
         width_raw, height_raw = scene.size
         num_z = scene.num_z_slices
 
-        print(f"[{vsi_path.name}] Stage 1: Tissue Masking...")
+        print(f"[{slide_path.name}] Stage 1: Tissue Masking...")
         _, mask = detect_tissue(scene)
 
-        print(f"[{vsi_path.name}] Stage 2: Grid Generation...")
+        print(f"[{slide_path.name}] Stage 2: Grid Generation...")
         raw_patch_size = self.cfg.patch_size * self.ds
         raw_stride = self.cfg.stride * self.ds
 
@@ -114,11 +114,13 @@ class SlidePreprocessor:
         )
 
         total_patches = len(candidates)
-        print(f"[{vsi_path.name}] Stage 3: Focus Search ({total_patches} patches)...")
+        print(
+            f"[{slide_path.name}] Stage 3: Focus Search ({total_patches} physical patches)..."
+        )
 
         if total_patches == 0:
             return SlideMetadata(
-                name=vsi_path.name,
+                name=slide_path.name,
                 width=width_raw,
                 height=height_raw,
                 num_z=num_z,
@@ -131,7 +133,7 @@ class SlidePreprocessor:
         # This is much faster than reading full slides or large ROIs in Slideio
         for i, (ox, oy) in enumerate(candidates):
             if i % 100 == 0:
-                print(f"  [{vsi_path.name}] Processing patch {i}/{total_patches}...")
+                print(f"  [{slide_path.name}] Processing patch {i}/{total_patches}...")
 
             with suppress_stderr():
                 # Read the full Z-stack for this patch
@@ -162,7 +164,7 @@ class SlidePreprocessor:
         )
 
         return SlideMetadata(
-            name=vsi_path.name,
+            name=slide_path.name,
             width=width_raw,
             height=height_raw,
             num_z=num_z,
@@ -327,8 +329,8 @@ def preprocess_dataset(
         save_master_index_json(master_index, dataset_name, patch_size)
 
 
-def process_slide_wrapper(vsi_path: Path, config: PreprocessConfig):
-    return SlidePreprocessor(config).process(vsi_path)
+def process_slide_wrapper(slide_path: Path, config: PreprocessConfig):
+    return SlidePreprocessor(config).process(slide_path)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import slideio
 
 
 def extract_zip(zip_path: Path, extract_target: Path) -> bool:
-    """Extract zip file if VSI is missing."""
+    """Extract zip file if the target VSI is missing."""
     expected_vsi_name = zip_path.name.replace(".zip", ".vsi")
     expected_vsi_path = extract_target / expected_vsi_name
 
@@ -26,8 +26,8 @@ def extract_zip(zip_path: Path, extract_target: Path) -> bool:
 
 def organize_vsi_files(extract_target: Path) -> None:
     """Move nested VSI files to root directory."""
-    all_vsis = list(extract_target.rglob("*.vsi"))
-    for vsi_file in all_vsis:
+    vsi_files = list(extract_target.rglob("*.vsi"))
+    for vsi_file in vsi_files:
         if vsi_file.parent != extract_target:
             dest = extract_target / vsi_file.name
             if not dest.exists():
@@ -43,8 +43,10 @@ def verify_vsi(vsi_path: Path) -> bool:
         scene = slide.get_scene(0)
 
         w, h = scene.size
-        test_rect = (w // 2, h // 2, 256, 256)
-        block = scene.read_block(rect=test_rect, size=(256, 256), slices=(0, 1))
+        test_rect = (w // 2, h // 2, min(256, w), min(256, h))
+        block = scene.read_block(
+            rect=test_rect, size=(test_rect[2], test_rect[3]), slices=(0, 1)
+        )
 
         return block is not None and block.size > 0
     except Exception as e:
@@ -62,14 +64,15 @@ def cleanup_corrupt_vsi(vsi_path: Path, zip_source: Path, extract_target: Path) 
         shutil.rmtree(aux_folder_path)
         print(f"       Deleted aux folder: {aux_folder_path.name}")
 
-    zip_path = zip_source / vsi_path.name.replace(".vsi", ".zip")
+    zip_name = vsi_path.name.replace(".vsi", ".zip")
+    zip_path = zip_source / zip_name
     if zip_path.exists():
         zip_path.unlink()
         print(f"       Deleted source zip: {zip_path.name}")
 
 
 def fix_zip_structure(dataset_name: str = config.DATASET_NAME) -> None:
-    """Extract and verify all dataset files."""
+    """Extract and verify all VSI zips."""
     zip_source = config.get_vsi_zip_dir(dataset_name)
     extract_target = config.get_vsi_raw_dir(dataset_name)
 
@@ -89,7 +92,7 @@ def fix_zip_structure(dataset_name: str = config.DATASET_NAME) -> None:
     all_vsis = list(extract_target.glob("*.vsi"))
     for vsi_file in all_vsis:
         if not verify_vsi(vsi_file):
-            print(f"[FAIL] Corrupt VSI detected: {vsi_file.name}")
+            print(f"[FAIL] Corrupt or unreadable VSI detected: {vsi_file.name}")
             cleanup_corrupt_vsi(vsi_file, zip_source, extract_target)
 
     print(f"Fix/Extraction structure for {dataset_name} complete.")
