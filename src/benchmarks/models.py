@@ -6,13 +6,7 @@ import lightning as L
 
 from src.dataset.vsi_datamodule import VSIDataModule
 from src.models.lightning_module import FocusOffsetRegressor
-from src.models.architectures import (
-    ResNetFocusRegressor,
-    ViTFocusRegressor,
-    ConvNeXtFocusRegressor,
-    EfficientNetFocusRegressor,
-    ConvNeXtV2FocusRegressor,
-)
+from src.models.architectures import ConvNeXtV2FocusRegressor
 
 torch.set_float32_matmul_precision("medium")
 
@@ -53,18 +47,10 @@ def benchmark_architecture(
 ):
     print(f"\nBenchmarking architecture: {arch_name}")
 
-    if arch_name == "resnet18":
-        backbone = ResNetFocusRegressor(version="resnet18")
-    elif arch_name == "resnet50":
-        backbone = ResNetFocusRegressor(version="resnet50")
-    elif arch_name == "vit_b_16":
-        backbone = ViTFocusRegressor(version="vit_b_16")
-    elif arch_name == "convnext_tiny":
-        backbone = ConvNeXtFocusRegressor(version="tiny")
-    elif arch_name == "efficientnet_b0":
-        backbone = EfficientNetFocusRegressor(version="b0")
-    elif arch_name == "convnext_v2_tiny":
-        backbone = ConvNeXtV2FocusRegressor(version="tiny")
+    if arch_name == "convnext_v2_tiny_multimodal":
+        backbone = ConvNeXtV2FocusRegressor(pretrained=False, use_transforms=True)
+    elif arch_name == "convnext_v2_tiny_baseline":
+        backbone = ConvNeXtV2FocusRegressor(pretrained=False, use_transforms=False)
     else:
         print(f"Unknown architecture {arch_name}, skipping.")
         return None
@@ -125,7 +111,7 @@ def main():
     datamodule = VSIDataModule(
         dataset_name="ZStack_HE",
         batch_size=128,
-        num_workers=8,
+        num_workers=4, # Updated to 4 based on autotune
         patch_size=224,
         stride=448,
         min_tissue_coverage=0.05,
@@ -145,12 +131,8 @@ def main():
     results = []
 
     arch_list = [
-        "resnet18",
-        "resnet50",
-        "vit_b_16",
-        "convnext_tiny",
-        "convnext_v2_tiny",
-        "efficientnet_b0",
+        "convnext_v2_tiny_multimodal",
+        "convnext_v2_tiny_baseline",
     ]
 
     for arch_name in arch_list:
@@ -166,12 +148,12 @@ def main():
 
     print("\n\n=== LIGHTNING BENCHMARK SUMMARY (AMP 16) ===")
     print(
-        f"{'Architecture':<25} | {'Throughput (img/s)':<20} | {'Est. Epoch Time (min)':<25}"
+        f"{'Architecture':<30} | {'Throughput (img/s)':<20} | {'Est. Epoch Time (min)':<25}"
     )
-    print("-" * 75)
+    print("-" * 80)
     for r in results:
         print(
-            f"{r['arch']:<25} | {r['throughput']:<20.2f} | {r['epoch_time_min']:<25.2f}"
+            f"{r['arch']:<30} | {r['throughput']:<20.2f} | {r['epoch_time_min']:<25.2f}"
         )
 
     # Save results to JSON

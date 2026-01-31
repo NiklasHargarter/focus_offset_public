@@ -1,4 +1,3 @@
-
 import os
 import time
 import torch
@@ -6,12 +5,13 @@ import lightning as L
 from typing import List, Tuple
 from src.dataset.vsi_datamodule import VSIDataModule
 from src.models.lightning_module import FocusOffsetRegressor
-from src.models.architectures import EfficientNetFocusRegressor
 import warnings
+
 warnings.filterwarnings("ignore")
 
 # Force matmul precision for RTX 40 series
 torch.set_float32_matmul_precision("medium")
+
 
 class ThroughputCallback(L.Callback):
     def __init__(self, warmup_steps: int = 20, measure_steps: int = 50):
@@ -33,9 +33,12 @@ class ThroughputCallback(L.Callback):
         measured_steps = self.step_count - self.warmup_steps
         if measured_steps > 0 and self.start_time > 0:
             duration = self.end_time - self.start_time
-            self.throughput = (measured_steps * trainer.train_dataloader.batch_size) / duration
+            self.throughput = (
+                measured_steps * trainer.train_dataloader.batch_size
+            ) / duration
 
-def run_trial(batch_size: int, num_workers: int) -> float:
+
+def run_trial(batch_size: int, num_workers: int, use_transforms: bool) -> float:
     """Runs a short training trial and returns throughput (samples/sec)."""
     try:
         datamodule = VSIDataModule(
@@ -46,19 +49,20 @@ def run_trial(batch_size: int, num_workers: int) -> float:
             stride=448,
             min_tissue_coverage=0.05,
             downsample_factor=2,
-            prefetch_factor=2 # Conservative default
+            prefetch_factor=2,
         )
         datamodule.setup(stage="fit")
-        
-        # Use EfficientNet B0 as a standard baseline for tuning
-        backbone = EfficientNetFocusRegressor(version="b0", pretrained=False)
-        model = FocusOffsetRegressor(backbone=backbone)
-        
+
+        # Use simple model for tuning
+        model = FocusOffsetRegressor(
+            pretrained=False, use_transforms=use_transforms
+        )
+
         callback = ThroughputCallback(warmup_steps=10, measure_steps=40)
-        
+
         trainer = L.Trainer(
             max_steps=50,
-            limit_val_batches=0, # Skip validation for speed
+            limit_val_batches=0,  # Skip validation for speed
             accelerator="gpu",
             devices=1,
             precision="bf16-mixed",
@@ -66,13 +70,13 @@ def run_trial(batch_size: int, num_workers: int) -> float:
             enable_checkpointing=False,
             enable_progress_bar=False,
             enable_model_summary=False,
-            callbacks=[callback]
+            callbacks=[callback],
         )
-        
+
         print(f"      - Starting trainer.fit...", flush=True)
         trainer.fit(model, datamodule=datamodule)
         return callback.throughput
-        
+
     except torch.cuda.OutOfMemoryError:
         print(f"  [OOM] Batch size {batch_size} is too large.")
         return -1.0
@@ -80,65 +84,99 @@ def run_trial(batch_size: int, num_workers: int) -> float:
         print(f"  [Error] {e}")
         return 0.0
 
-def main():
-    print("="*60)
-    print("      AUTOMATIC TRAINING HYPERPARAMETER TUNER")
-    print("="*60)
+
+
+def find_max_batch_size(use_transforms: bool) -> int:
+    """Finds the maximum batch size that fits in memory using a fixed worker count."""
+    print(f"\n   --- STAGE 1: Find Max Batch Size ---")
     
+    # Powers of 2
+    candidate_sizes = [16, 32, 64, 128, 256, 512]
+    # Use a low, safe worker count for this test to minimize overhead
+    test_workers = 4 
+    
+    max_safe_bs = 0
+    
+    for bs in candidate_sizes:
+        print(f"  > Testing Batch Size: {bs}...", flush=True)
+        throughput = run_trial(bs, num_workers=test_workers, use_transforms=use_transforms)
+        
+        if throughput < 0: # OOM
+            print(f"    [OOM] Batch Size {bs} is too large.")
+            break
+        elif throughput == 0: # Error
+            print(f"    [Error] Failed at Batch Size {bs}.")
+            break
+        else:
+            print(f"    [Success] {throughput:.2f} img/s")
+            max_safe_bs = bs
+            
+    print(f"   >>> Max Safe Batch Size: {max_safe_bs}")
+    return max_safe_bs
+
+def find_ideal_workers(batch_size: int, use_transforms: bool) -> Tuple[int, float]:
+    """Finds the optimal worker count for a given batch size."""
+    print(f"\n   --- STAGE 2: Find Ideal Worker Count (BS={batch_size}) ---")
+    
+    candidate_workers = [4, 8, 12, 16]
+    
+    best_workers = 0
+    best_throughput = 0.0
+    
+    print(f"{'Workers':<10} | {'Throughput (img/s)':<20}")
+    print("-" * 40)
+    
+    for workers in candidate_workers:
+        print(f"  > Testing Workers: {workers}...", flush=True)
+        throughput = run_trial(batch_size, num_workers=workers, use_transforms=use_transforms)
+        
+        if throughput <= 0:
+            print(f"    [Failed] Workers={workers}")
+            continue
+            
+        print(f"    Result: {throughput:.2f} img/s")
+        
+        if throughput > best_throughput:
+            best_throughput = throughput
+            best_workers = workers
+            
+    print("-" * 40)
+    return best_workers, best_throughput
+
+def main():
+    print("=" * 60)
+    print("      AUTOMATIC TRAINING HYPERPARAMETER TUNER (2-STAGE V2)")
+    print("=" * 60)
+
     cpu_count = os.cpu_count() or 8
     gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "None"
-    
+
     print(f"System: {cpu_count} CPUs | GPU: {gpu_name}")
     
-    # Candidate values
-    batch_sizes = [128, 256, 512]
-    worker_counts = [8, 12, 16]
+    model_configs = [("Multimodal", True), ("RGB Only", False)]
 
-    print(f"Batch sizes to test: {batch_sizes}")
-    print(f"Worker counts to test: {worker_counts}")
-    print("-" * 60)
-    
-    results = []
-    best_throughput = 0.0
-    best_config = (0, 0)
-    
-    print(f"{'Workers':<10} | {'Batch Size':<12} | {'Throughput (img/s)':<20}")
-    print("-" * 60)
-    
-    for workers in worker_counts:
-        oom_hit = False
-        for bs in batch_sizes:
-            if oom_hit:
-                break
+    for mode_name, use_transforms in model_configs:
+        print("\n" + "=" * 60)
+        print(f"   BENCHMARKING: {mode_name}")
+        print("=" * 60)
+        
+        # 1. Find Max Batch Size
+        max_bs = find_max_batch_size(use_transforms)
+        
+        if max_bs == 0:
+            print("Could not find any working batch size configuration.")
+            continue
             
-            print(f"  > Testing Config: Workers={workers}, Batch Size={bs}...", flush=True)    
-            throughput = run_trial(bs, workers)
-            
-            if throughput < 0:
-                print(f"    [OOM] Batch size {bs} failed.")
-                oom_hit = True
-                continue
-            
-            if throughput == 0:
-                print(f"    [Error] Configuration failed.")
-                continue
-                
-            print(f"    Result: {throughput:.2f} img/s")
-            results.append((workers, bs, throughput))
-            
-            if throughput > best_throughput:
-                best_throughput = throughput
-                best_config = (workers, bs)
+        # 2. Find Ideal Workers
+        best_workers, max_throughput = find_ideal_workers(max_bs, use_transforms)
+        
+        print("\n" + "-" * 60)
+        print(f"--- OPTIMAL SETTINGS FOR {mode_name.upper()} ---")
+        print(f"Optimal Batch Size:   {max_bs}")
+        print(f"Optimal Worker Count: {best_workers}")
+        print(f"Max Throughput:       {max_throughput:.2f} img/s")
+        print("-" * 60)
 
-    print("-" * 60)
-    print("\n--- OPTIMAL SETTINGS FOR THIS MACHINE ---")
-    if best_throughput > 0:
-        print(f"Optimal Batch Size:  {best_config[1]}")
-        print(f"Optimal Worker Count: {best_config[0]}")
-        print(f"Max Throughput:       {best_throughput:.2f} img/s")
-    else:
-        print("No successful trials completed.")
-    print("-" * 60)
 
 if __name__ == "__main__":
     main()

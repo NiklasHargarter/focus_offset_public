@@ -6,6 +6,8 @@ from lightning.pytorch.cli import LightningCLI
 
 from src.models.lightning_module import FocusOffsetRegressor
 
+from src.dataset.vsi_datamodule import VSIDataModule
+
 # General best practices for training performance
 torch.set_float32_matmul_precision("medium")
 
@@ -28,11 +30,10 @@ class FocusCLI(LightningCLI):
 def cli_main():
     FocusCLI(
         model_class=FocusOffsetRegressor,
-        datamodule_class=L.LightningDataModule,
-        subclass_mode_data=True,
+        datamodule_class=VSIDataModule,
+        subclass_mode_data=False,
         seed_everything_default=42,
         save_config_callback=None,
-        parser_kwargs={"default_config_files": ["default_config.yaml"]},
         run=True,
     )
 

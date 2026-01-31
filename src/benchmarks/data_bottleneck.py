@@ -54,7 +54,7 @@ def main():
 
     # 2. PURE GPU SPEED (Model Only)
     print("\nPhase 2: Synthetic GPU Speed (Model Peak)")
-    backbone = ConvNeXtV2FocusRegressor(version="tiny").cuda()
+    backbone = ConvNeXtV2FocusRegressor().cuda()
     model = FocusOffsetRegressor(backbone=backbone).cuda()
     model.backbone.to(memory_format=torch.channels_last)
 

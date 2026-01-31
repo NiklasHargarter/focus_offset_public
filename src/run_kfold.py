@@ -66,7 +66,7 @@ def main():
         )
 
         # 2. Initialize Model Components
-        backbone = ConvNeXtV2FocusRegressor(version="tiny", pretrained=True)
+        backbone = ConvNeXtV2FocusRegressor(pretrained=True)
 
         model = FocusOffsetRegressor(
             backbone=backbone,

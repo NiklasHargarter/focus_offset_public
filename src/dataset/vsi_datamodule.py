@@ -24,12 +24,12 @@ class BaseVSIDataModule(L.LightningDataModule):
 
     def __init__(
         self,
-        dataset_name: str,
-        batch_size: int,
-        num_workers: int,
-        patch_size: int,
-        stride: int,
-        min_tissue_coverage: float,
+        dataset_name: str = "ZStack_HE",
+        batch_size: int = 64,
+        num_workers: int = 8,
+        patch_size: int = 224,
+        stride: int = 448,
+        min_tissue_coverage: float = 0.05,
         downsample_factor: int = 2,
         split_ratio: float = 0.3,
         force_preprocess: bool = False,
@@ -57,14 +57,30 @@ class BaseVSIDataModule(L.LightningDataModule):
     def train_transform(self):
         return A.Compose(
             [
+                # 1. Geometric (Scale/Rotation Invariance)
                 A.D4(p=1.0),
-                A.ColorJitter(
-                    brightness=(0.9, 1.1),
-                    contrast=(0.9, 1.1),
-                    saturation=(0.9, 1.1),
-                    hue=(-0.1, 0.1),
-                    p=0.5,
+                A.RandomResizedCrop(
+                    size=(self.patch_size, self.patch_size),
+                    scale=(0.8, 1.0), 
+                    p=1.0
                 ),
+                
+                # 2. Physics Distortion (PSF/Aberration)
+                # alpha=1 is subtle, but alpha_affine adds shifts
+                A.ElasticTransform(alpha=1, sigma=20, alpha_affine=20, p=0.2),
+
+                # 3. Aggressive Chroma/Stain Destruction
+                A.Compose([
+                    A.ColorJitter(
+                        brightness=0.3, contrast=0.3, saturation=0.3, hue=0.2, p=0.8
+                    ),
+                    A.ToGray(p=0.2),         # Force structure learning
+                    A.ChannelShuffle(p=0.1), # Break channel priors
+                ], p=1.0),
+
+                # 4. Sensor Robustness (ISO Grain)
+                A.GaussNoise(var_limit=(10.0, 50.0), p=0.4),
+
                 A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
                 ToTensorV2(),
             ]

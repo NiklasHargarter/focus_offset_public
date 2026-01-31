@@ -12,14 +12,21 @@ class FocusOffsetRegressor(L.LightningModule):
 
     def __init__(
         self,
-        backbone: nn.Module,
+        pretrained: bool = True,
+        use_transforms: bool = True,
         learning_rate: float = 1e-4,
         weight_decay: float = 0.05,
         save_predictions: bool = True,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["backbone"])
-        self.backbone = backbone
+        self.save_hyperparameters()
+        
+        from src.models.architectures import ConvNeXtV2FocusRegressor
+        self.backbone = ConvNeXtV2FocusRegressor(
+            pretrained=pretrained,
+            use_transforms=use_transforms
+        )
+        
         # Use channels_last memory format for modern NVIDIA GPUs
         self.backbone.to(memory_format=torch.channels_last)
         self.learning_rate = learning_rate
