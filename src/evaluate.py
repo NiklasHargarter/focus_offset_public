@@ -28,10 +28,10 @@ def evaluate(
     if model_config and Path(model_config).exists():
         with open(model_config, "r") as f:
             full_cfg = yaml.safe_load(f)
-        
+
         parser = LightningArgumentParser()
         parser.add_lightning_class_args(FocusOffsetRegressor, "model")
-        
+
         # Instantiate with provided config
         model_cfg = {"model": full_cfg.get("model", {})}
         cfg_init = parser.instantiate_classes(model_cfg)

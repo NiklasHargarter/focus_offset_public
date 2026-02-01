@@ -26,7 +26,7 @@ def detect_tissue(scene: Any) -> Tuple[int, np.ndarray]:
     num_z = scene.num_z_slices
     d_w, d_h = width // MASK_DOWNSCALE, height // MASK_DOWNSCALE
 
-    print(f"  [DEBUG] Scanning Z-slices for sharpest thumbnail...")
+    print("  [DEBUG] Scanning Z-slices for sharpest thumbnail...")
     best_score, best_img, best_z = -1.0, None, 0
     # Sample every 3rd slice to find a good reference image for the mask
     for z in range(0, num_z, 3):
@@ -280,7 +280,7 @@ def preprocess_dataset(
             manifest_data = pickle.load(f)
 
         if manifest_data["config_state"] != current_config:
-            print(f"Config mismatch! Use --force to reprocess.")
+            print("Config mismatch! Use --force to reprocess.")
             return
 
         for pkl_path in sorted(indices_dir.glob("*.pkl")):

@@ -1,5 +1,7 @@
 import os
 import argparse
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 from src import config
 from exact_sync.v1.configuration import Configuration
 from exact_sync.v1.api_client import ApiClient
@@ -13,14 +15,75 @@ from src.dataset.vsi_prep.fix_zip import (
 )
 
 
+def process_image(img_info, dataset_name, raw_dir, zip_dir, keep_zip):
+    """Worker function to process a single image."""
+    image_id = img_info["id"]
+    vsi_name = img_info["name"]
+    zip_name = vsi_name.replace(".vsi", ".zip")
+
+    vsi_path = raw_dir / vsi_name
+    zip_path = zip_dir / zip_name
+
+    # Create a fresh client for thread safety
+    configuration = Configuration()
+    configuration.username = os.environ.get("EXACT_USERNAME", "niklas.hargarter")
+    configuration.password = os.environ.get("EXACT_PASSWORD")
+    configuration.host = "https://exact.hs-flensburg.de"
+
+    # Suppress huge logs from urllib3/swagger if needed, or just let them be
+    client = ApiClient(configuration)
+    images_api = ImagesApi(client)
+
+    log_prefix = f"[{vsi_name}]"
+
+    # 1. Step: Check if valid VSI already exists
+    if vsi_path.exists():
+        if verify_vsi(vsi_path):
+            print(f"{log_prefix} VSI valid. Skipping.")
+            if zip_path.exists() and not keep_zip:
+                zip_path.unlink()
+            return
+        else:
+            print(f"{log_prefix} VSI corrupt. Cleaning up...")
+            cleanup_corrupt_vsi(vsi_path, zip_dir, raw_dir)
+
+    # 2. Step: Check for ZIP if VSI is missing/corrupt
+    if not zip_path.exists():
+        print(f"{log_prefix} Downloading ZIP...")
+        try:
+            images_api.download_image(id=image_id, target_path=str(zip_path))
+        except Exception as e:
+            print(f"{log_prefix} [ERROR] Download failed: {e}")
+            return
+    else:
+        print(f"{log_prefix} ZIP found.")
+
+    # 3. Step: Unzip and Verify
+    print(f"{log_prefix} Extracting...")
+    try:
+        extract_zip(zip_path, raw_dir)
+        organize_vsi_files(raw_dir)
+
+        if verify_vsi(vsi_path):
+            print(f"{log_prefix} [OK] Extracted and verified.")
+            if not keep_zip:
+                zip_path.unlink()
+        else:
+            print(f"{log_prefix} [FAIL] Verification failed after extraction.")
+            cleanup_corrupt_vsi(vsi_path, zip_dir, raw_dir)
+    except Exception as e:
+        print(f"{log_prefix} [ERROR] Extraction failed: {e}")
+
+
 def download_dataset(
     dataset_name: str = config.DATASET_NAME,
     force: bool = False,
     keep_zip: bool = False,
     limit: int = None,
     exclude: str = None,
+    workers: int = 4,
 ) -> None:
-    """Download, extract, and verify VSI files one-by-one to save space."""
+    """Download, extract, and verify VSI files in parallel."""
     print(f"Fetching full image list for {dataset_name} from EXACT...")
     all_images = get_exact_image_list(dataset_name=dataset_name, force=force)
 
@@ -43,69 +106,27 @@ def download_dataset(
         print(f"Limiting download to the first {limit} slides.")
         all_images = all_images[:limit]
 
-    configuration = Configuration()
-    configuration.username = os.environ.get("EXACT_USERNAME", "niklas.hargarter")
-    configuration.password = os.environ.get("EXACT_PASSWORD")
-    if configuration.password is None:
+    if os.environ.get("EXACT_PASSWORD") is None:
         raise ValueError("Environment variable 'EXACT_PASSWORD' is not set.")
-    configuration.host = "https://exact.hs-flensburg.de"
 
-    client = ApiClient(configuration)
-    images_api = ImagesApi(client)
+    print(
+        f"Starting parallel processing with {workers} workers for {len(all_images)} images..."
+    )
 
-    print(f"Starting processing for {len(all_images)} images in {dataset_name}...")
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(
+                process_image, img_info, dataset_name, raw_dir, zip_dir, keep_zip
+            )
+            for img_info in all_images
+        ]
 
-    for img_info in all_images:
-        image_id = img_info["id"]
-        vsi_name = img_info["name"]
-        zip_name = vsi_name.replace(".vsi", ".zip")
-
-        vsi_path = raw_dir / vsi_name
-        zip_path = zip_dir / zip_name
-
-        print(f"\n--- Processing {vsi_name} ---")
-
-        # 1. Step: Check if valid VSI already exists
-        if vsi_path.exists():
-            print("VSI already exists locally. Verifying...")
-            if verify_vsi(vsi_path):
-                print(f"[OK] {vsi_name} is valid.")
-                # If valid VSI exists, we don't need the zip
-                if zip_path.exists() and not keep_zip:
-                    print(f"Cleaning up redundant ZIP: {zip_name}")
-                    zip_path.unlink()
-                continue
-            else:
-                print(f"[FAIL] {vsi_name} is corrupt. Re-processing...")
-                cleanup_corrupt_vsi(vsi_path, zip_dir, raw_dir)
-
-        # 2. Step: Check for ZIP if VSI is missing/corrupt
-        if not zip_path.exists():
-            print(f"ZIP missing. Downloading {zip_name}...")
+        # Wait for all to complete
+        for future in concurrent.futures.as_completed(futures):
             try:
-                images_api.download_image(id=image_id, target_path=str(zip_path))
+                future.result()
             except Exception as e:
-                print(f"[ERROR] Failed to download {vsi_name}: {e}")
-                continue
-        else:
-            print(f"ZIP already exists: {zip_name}")
-
-        # 3. Step: Unzip and Verify
-        print(f"Extracting {zip_name}...")
-        try:
-            extract_zip(zip_path, raw_dir)
-            organize_vsi_files(raw_dir)  # Handle any nested structures
-
-            if verify_vsi(vsi_path):
-                print(f"[OK] {vsi_name} extracted and verified.")
-                if not keep_zip:
-                    print(f"Deleting ZIP to save space: {zip_name}")
-                    zip_path.unlink()
-            else:
-                print(f"[FAIL] Verification failed after extraction for {vsi_name}.")
-                cleanup_corrupt_vsi(vsi_path, zip_dir, raw_dir)
-        except Exception as e:
-            print(f"[ERROR] Unzipping/Verification failed for {zip_name}: {e}")
+                print(f"Worker exception: {e}")
 
     print(f"\nProcessing for {dataset_name} complete.")
 
@@ -130,6 +151,12 @@ if __name__ == "__main__":
         default=None,
         help="Exclude slides containing this string in their name",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of parallel download workers",
+    )
     args = parser.parse_args()
     download_dataset(
         dataset_name=args.dataset,
@@ -137,4 +164,5 @@ if __name__ == "__main__":
         keep_zip=args.keep_zip,
         limit=args.limit,
         exclude=args.exclude,
+        workers=args.workers,
     )

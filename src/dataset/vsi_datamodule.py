@@ -59,28 +59,23 @@ class BaseVSIDataModule(L.LightningDataModule):
             [
                 # 1. Geometric (Scale/Rotation Invariance)
                 A.D4(p=1.0),
-                A.RandomResizedCrop(
-                    size=(self.patch_size, self.patch_size),
-                    scale=(0.8, 1.0), 
-                    p=1.0
-                ),
-                
+                # A.RandomCrop(height=self.patch_size, width=self.patch_size, p=1.0),
                 # 2. Physics Distortion (PSF/Aberration)
                 # alpha=1 is subtle, but alpha_affine adds shifts
-                A.ElasticTransform(alpha=1, sigma=20, p=0.2),
-
+                # A.ElasticTransform(alpha=1, sigma=20, p=0.2),
                 # 3. Aggressive Chroma/Stain Destruction
-                A.Compose([
-                    A.ColorJitter(
-                        brightness=0.3, contrast=0.3, saturation=0.3, hue=0.2, p=0.8
-                    ),
-                    A.ToGray(p=0.2),         # Force structure learning
-                    A.ChannelShuffle(p=0.1), # Break channel priors
-                ], p=1.0),
-
+                A.Compose(
+                    [
+                        A.ColorJitter(
+                            brightness=0.3, contrast=0.3, saturation=0.3, hue=0.2, p=0.8
+                        ),
+                        A.ToGray(p=0.2),  # Force structure learning
+                        A.ChannelShuffle(p=0.1),  # Break channel priors
+                    ],
+                    p=1.0,
+                ),
                 # 4. Sensor Robustness (ISO Grain)
-                A.GaussNoise(std_range=(3.16 / 255, 7.07 / 255), p=0.4),
-
+                # A.GaussNoise(std_range=(3.16 / 255, 7.07 / 255), p=0.4),
                 A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
                 ToTensorV2(),
             ]
@@ -363,7 +358,9 @@ class IHCDataModule(BaseVSIDataModule):
         master_index, splits = self._load_data_indices()
 
         if stage == "fit":
-             raise RuntimeError(f"{self.__class__.__name__} is for evaluation only. Training is disabled.")
+            raise RuntimeError(
+                f"{self.__class__.__name__} is for evaluation only. Training is disabled."
+            )
 
         if stage == "test" or stage == "predict" or stage is None:
             test_files = splits.get("test", [])

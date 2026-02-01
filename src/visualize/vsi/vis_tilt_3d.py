@@ -1,8 +1,6 @@
 import argparse
-import pickle
 from pathlib import Path
 import matplotlib.pyplot as plt
-import numpy as np
 from src import config
 from src.dataset.vsi_prep.preprocess import load_master_index
 

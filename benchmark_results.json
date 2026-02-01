@@ -1,0 +1,26 @@
+[
+    {
+        "model": "Multimodal",
+        "dataset": "HE",
+        "mae": 0.40544945001602173,
+        "std": 0.4590003788471222
+    },
+    {
+        "model": "Baseline RGB",
+        "dataset": "HE",
+        "mae": 0.3590863049030304,
+        "std": 0.42247772216796875
+    },
+    {
+        "model": "Multimodal",
+        "dataset": "Jiang2018",
+        "mae": 6.216872215270996,
+        "std": 4.387452125549316
+    },
+    {
+        "model": "Baseline RGB",
+        "dataset": "Jiang2018",
+        "mae": 5.910369873046875,
+        "std": 3.9874799251556396
+    }
+]

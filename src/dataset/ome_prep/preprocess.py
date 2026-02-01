@@ -2,14 +2,12 @@ import os
 import argparse
 import multiprocessing
 import pickle
-import json
 from functools import partial
 from pathlib import Path
-from typing import Any, Tuple, List
+from typing import Tuple, List
 import cv2
 import numpy as np
 import tifffile
-from dataclasses import asdict
 
 from src import config
 from src.dataset.vsi_types import SlideMetadata, PreprocessConfig, MasterIndex
@@ -17,8 +15,10 @@ from src.utils.focus_metrics import compute_brenner_gradient
 
 MASK_DOWNSCALE = 16
 
+
 class OMEImageReader:
     """Uses tifffile to read multi-series OME-TIFFs as Z-stacks."""
+
     def __init__(self, path: Path):
         self.path = path
         self._tif = tifffile.TiffFile(path)
@@ -28,7 +28,9 @@ class OMEImageReader:
         self.height, self.width = first_series.shape[:2]
         self.size = (self.width, self.height)
 
-    def read_block(self, rect: Tuple[int, int, int, int], slices: Tuple[int, int] = None) -> np.ndarray:
+    def read_block(
+        self, rect: Tuple[int, int, int, int], slices: Tuple[int, int] = None
+    ) -> np.ndarray:
         """
         Reads a block from the multi-series image.
         rect: (x, y, w, h)
@@ -37,7 +39,7 @@ class OMEImageReader:
         """
         x, y, w, h = rect
         z_start, z_end = slices if slices else (0, self.num_z)
-        
+
         stack = []
         for z in range(z_start, z_end):
             # Read the series and crop
@@ -45,14 +47,15 @@ class OMEImageReader:
             # data is (H, W, C) or (H, W)
             if data.ndim == 2:
                 data = np.expand_dims(data, axis=-1)
-            
-            crop = data[y:y+h, x:x+w]
+
+            crop = data[y : y + h, x : x + w]
             stack.append(crop)
-            
+
         return np.stack(stack)
 
     def close(self):
         self._tif.close()
+
 
 def detect_tissue(reader: OMEImageReader) -> Tuple[int, np.ndarray]:
     """Find the sharpest slice and generate a tissue mask."""
@@ -60,9 +63,9 @@ def detect_tissue(reader: OMEImageReader) -> Tuple[int, np.ndarray]:
     num_z = reader.num_z
     d_w, d_h = width // MASK_DOWNSCALE, height // MASK_DOWNSCALE
 
-    print(f"  [DEBUG] Scanning slices for sharpest thumbnail...")
+    print("  [DEBUG] Scanning slices for sharpest thumbnail...")
     best_score, best_img, best_z = -1.0, None, 0
-    
+
     # Sample slices
     for z in range(0, num_z):
         # Read full image downsampled if possible, but for these 2k x 2k, just read and resize
@@ -80,9 +83,10 @@ def detect_tissue(reader: OMEImageReader) -> Tuple[int, np.ndarray]:
     # but we'll try it.
     try:
         from skimage.filters import threshold_otsu
+
         thresh = threshold_otsu(gray)
         mask = ((gray <= thresh) * 255).astype(np.uint8)
-    except:
+    except Exception:
         # Fallback to simple threshold if Otsu fails
         mask = ((gray < 200) * 255).astype(np.uint8)
 
@@ -90,6 +94,7 @@ def detect_tissue(reader: OMEImageReader) -> Tuple[int, np.ndarray]:
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
     return best_z, mask
+
 
 def generate_patch_candidates(
     mask: np.ndarray,
@@ -105,10 +110,12 @@ def generate_patch_candidates(
             mx, my = x // MASK_DOWNSCALE, y // MASK_DOWNSCALE
             mw, mh = patch_size_raw // MASK_DOWNSCALE, patch_size_raw // MASK_DOWNSCALE
             mask_patch = mask[my : my + mh, mx : mx + mw]
-            if mask_patch.size == 0: continue
+            if mask_patch.size == 0:
+                continue
             if np.mean(mask_patch > 0) >= min_cov:
                 candidates.append((x, y))
     return candidates
+
 
 class OMEPreprocessor:
     def __init__(self, config: PreprocessConfig):
@@ -128,7 +135,12 @@ class OMEPreprocessor:
         raw_stride = self.cfg.stride * self.ds
 
         candidates = generate_patch_candidates(
-            mask, width_raw, height_raw, raw_patch_size, raw_stride, self.cfg.min_tissue_coverage
+            mask,
+            width_raw,
+            height_raw,
+            raw_patch_size,
+            raw_stride,
+            self.cfg.min_tissue_coverage,
         )
 
         total_patches = len(candidates)
@@ -137,32 +149,43 @@ class OMEPreprocessor:
         if total_patches == 0:
             reader.close()
             return SlideMetadata(
-                name=img_path.name, width=width_raw, height=height_raw, num_z=num_z,
-                patches=np.array([], dtype=np.int32).reshape(0, 3)
+                name=img_path.name,
+                width=width_raw,
+                height=height_raw,
+                num_z=num_z,
+                patches=np.array([], dtype=np.int32).reshape(0, 3),
             )
 
         best_zs = np.zeros(total_patches, dtype=np.int32)
         for i, (ox, oy) in enumerate(candidates):
             z_stack = reader.read_block(
-                rect=(ox, oy, raw_patch_size, raw_patch_size),
-                slices=(0, num_z)
+                rect=(ox, oy, raw_patch_size, raw_patch_size), slices=(0, num_z)
             )
             # z_stack is (Z, H_raw, W_raw, C)
             patch_scores = []
             for z in range(num_z):
                 # Resize to target patch size for focus metric consistent with training
-                patch_img = cv2.resize(z_stack[z], (self.cfg.patch_size, self.cfg.patch_size))
+                patch_img = cv2.resize(
+                    z_stack[z], (self.cfg.patch_size, self.cfg.patch_size)
+                )
                 score = compute_brenner_gradient(patch_img)
                 patch_scores.append(score)
             best_zs[i] = np.argmax(patch_scores)
 
         reader.close()
         c_arr = np.array(candidates)
-        final_patches = np.column_stack([c_arr[:, 0], c_arr[:, 1], best_zs]).astype(np.int32)
+        final_patches = np.column_stack([c_arr[:, 0], c_arr[:, 1], best_zs]).astype(
+            np.int32
+        )
 
         return SlideMetadata(
-            name=img_path.name, width=width_raw, height=height_raw, num_z=num_z, patches=final_patches
+            name=img_path.name,
+            width=width_raw,
+            height=height_raw,
+            num_z=num_z,
+            patches=final_patches,
         )
+
 
 def process_image_wrapper(img_path: Path, config: PreprocessConfig):
     try:
@@ -170,6 +193,7 @@ def process_image_wrapper(img_path: Path, config: PreprocessConfig):
     except Exception as e:
         print(f"Error processing {img_path}: {e}")
         return None
+
 
 def preprocess_dataset(
     dataset_name: str,
@@ -189,8 +213,11 @@ def preprocess_dataset(
 
     workers = workers or os.cpu_count() or 1
     current_config = PreprocessConfig(
-        patch_size=patch_size, stride=stride, downsample_factor=downsample_factor,
-        min_tissue_coverage=min_tissue_coverage, dataset_name=dataset_name
+        patch_size=patch_size,
+        stride=stride,
+        downsample_factor=downsample_factor,
+        min_tissue_coverage=min_tissue_coverage,
+        dataset_name=dataset_name,
     )
 
     existing_results = []
@@ -206,12 +233,16 @@ def preprocess_dataset(
                 existing_results.append(res)
                 processed_names.add(res.name)
 
-    all_files = sorted(list(raw_dir.glob("*.ome.tiff")) + list(raw_dir.glob("*.ome.tif")))
+    all_files = sorted(
+        list(raw_dir.glob("*.ome.tiff")) + list(raw_dir.glob("*.ome.tif"))
+    )
     if limit:
         all_files = all_files[:limit]
 
     files_to_process = [f for f in all_files if f.name not in processed_names]
-    print(f"Preprocessing OME-TIFF {dataset_name} (Total: {len(all_files)}, Remaining: {len(files_to_process)})")
+    print(
+        f"Preprocessing OME-TIFF {dataset_name} (Total: {len(all_files)}, Remaining: {len(files_to_process)})"
+    )
 
     if files_to_process:
         with multiprocessing.Pool(workers) as pool:
@@ -227,18 +258,23 @@ def preprocess_dataset(
         master_index = MasterIndex(
             file_registry=sorted(existing_results, key=lambda x: x.name),
             patch_size=patch_size,
-            config_state=current_config
+            config_state=current_config,
         )
         with open(manifest_path, "wb") as f:
             pickle.dump(master_index, f)
         print(f"Master index saved to {manifest_path}")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--patch_size", type=int, default=224)
-    parser.add_argument("--stride", type=int, default=448) # For 2k x 2k FOVs, stride can be larger or same
-    parser.add_argument("--downsample_factor", type=int, default=1) # AgNor might not need downsampling?
+    parser.add_argument(
+        "--stride", type=int, default=448
+    )  # For 2k x 2k FOVs, stride can be larger or same
+    parser.add_argument(
+        "--downsample_factor", type=int, default=1
+    )  # AgNor might not need downsampling?
     parser.add_argument("--min_tissue_coverage", type=float, default=0.01)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=None)
@@ -246,6 +282,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     preprocess_dataset(
-        args.dataset, args.patch_size, args.stride, args.downsample_factor,
-        args.min_tissue_coverage, limit=args.limit, workers=args.workers, force=args.force
+        args.dataset,
+        args.patch_size,
+        args.stride,
+        args.downsample_factor,
+        args.min_tissue_coverage,
+        limit=args.limit,
+        workers=args.workers,
+        force=args.force,
     )

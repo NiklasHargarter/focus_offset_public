@@ -101,6 +101,12 @@ class Jiang2018Dataset(Dataset):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         tensor = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+
+        # Apply ImageNet normalization (Standard for this project)
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+        tensor = (tensor - mean) / std
+
         return tensor, torch.tensor(sample["offset"], dtype=torch.float32)
 
 

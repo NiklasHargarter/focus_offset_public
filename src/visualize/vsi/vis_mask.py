@@ -19,10 +19,9 @@ def save_mask(vsi_path: Path):
         slide = slideio.open_slide(str(vsi_path), "VSI")
     scene = slide.get_scene(0)
     width, height = scene.size
-    num_z = scene.num_z_slices
 
     ds = 8
-    dw, dh = width // ds, height // ds
+    _dw, _dh = width // ds, height // ds
 
     best_z, mask = detect_tissue(scene)
     cv2.imwrite(str(out_path), mask)

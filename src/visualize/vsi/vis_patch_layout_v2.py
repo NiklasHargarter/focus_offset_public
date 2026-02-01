@@ -1,5 +1,4 @@
 import argparse
-import pickle
 import cv2
 import slideio
 from pathlib import Path

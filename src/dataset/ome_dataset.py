@@ -3,11 +3,14 @@ from torch.utils.data import Dataset
 import bisect
 import os
 import tifffile
+import numpy as np
+import cv2
 from typing import Optional, Callable, Any
 from pathlib import Path
 from src import config
 
 from src.dataset.vsi_types import ProcessedIndex, SlideMetadata
+
 
 class OMEDataset(Dataset):
     """
@@ -19,7 +22,7 @@ class OMEDataset(Dataset):
         self,
         index_data: ProcessedIndex,
         transform: Optional[Callable[[Any], torch.Tensor]] = None,
-        z_res_microns: float = 1.0, # Default fallback if metadata is missing
+        z_res_microns: float = 1.0,  # Default fallback if metadata is missing
     ):
         self.index = index_data
         self.transform = transform
@@ -54,7 +57,9 @@ class OMEDataset(Dataset):
                 reader = tifffile.TiffFile(actual_path)
                 self._readers[img_path_str] = reader
             except Exception as e:
-                raise RuntimeError(f"Error opening OME-TIFF in process {current_pid}: {actual_path}. Error: {e}")
+                raise RuntimeError(
+                    f"Error opening OME-TIFF in process {current_pid}: {actual_path}. Error: {e}"
+                )
 
         return self._readers[img_path_str]
 
@@ -76,9 +81,9 @@ class OMEDataset(Dataset):
         z_level = local_idx % num_z
 
         x, y, best_z = file_meta.patches[patch_idx]
-        
+
         reader = self._get_reader(img_name)
-        
+
         # Calculate focus offset
         # TODO: Attempt to extract z_res_microns from OME-XML if possible
         z_offset = float(best_z - z_level) * self.z_res_microns
@@ -86,11 +91,11 @@ class OMEDataset(Dataset):
         # Read the patch from the specific series (z_level)
         # In multi-series OME-TIFF, series corresponds to Z
         series = reader.series[z_level]
-        
+
         # Determine crop in raw coordinates
         raw_w = int(self.patch_size * self.downsample_factor)
         raw_h = int(self.patch_size * self.downsample_factor)
-        
+
         # tifffile series asarray might be slow for full images if they are huge,
         # but for 2k x 2k it's fine. For larger WSIs, we'd need a more efficient way.
         # Note: tifffile doesn't have a direct "read ROI" for all formats without loading full page.
@@ -98,23 +103,21 @@ class OMEDataset(Dataset):
         try:
             full_plane = series.asarray()
             # Crop
-            block = full_plane[int(y):int(y+raw_h), int(x):int(x+raw_w)]
-            
+            block = full_plane[int(y) : int(y + raw_h), int(x) : int(x + raw_w)]
+
             # Grayscale to RGB if needed
             if block.ndim == 2:
-                block = np.stack([block]*3, axis=-1)
+                block = np.stack([block] * 3, axis=-1)
             elif block.shape[-1] == 1:
-                block = np.concatenate([block]*3, axis=-1)
+                block = np.concatenate([block] * 3, axis=-1)
 
             # Resize to patch_size
             if block.shape[0] != self.patch_size or block.shape[1] != self.patch_size:
-                import cv2
                 block = cv2.resize(block, (self.patch_size, self.patch_size))
 
             if self.transform:
                 image = self.transform(image=block)["image"]
             else:
-                import numpy as np
                 image = torch.from_numpy(block).permute(2, 0, 1).float() / 255.0
 
             metadata = {

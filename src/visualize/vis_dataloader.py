@@ -1,9 +1,6 @@
 import argparse
-import torch
-import cv2
 import numpy as np
 from pathlib import Path
-from src import config
 from src.dataset.vsi_datamodule import VSIDataModule
 from src.dataset.vsi_prep.preprocess import load_master_index
 from src.dataset.vsi_dataset_lightning import VSIDatasetLightning

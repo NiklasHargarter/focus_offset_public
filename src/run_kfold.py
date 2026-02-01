@@ -7,12 +7,19 @@ from lightning.pytorch.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
 )
+import warnings
 from lightning.pytorch.loggers import TensorBoardLogger
 
 # Import your codebase modules
 from src.models.lightning_module import FocusOffsetRegressor
-from src.models.architectures import ConvNeXtV2FocusRegressor
 from src.dataset.vsi_datamodule import HEFoldDataModule
+
+# Suppress harmless TorchInductor warning for FFT (Complex Operators)
+# This is expected since Inductor falls back to eager mode for the first layer (FFT) on Blackwell/RTX 5090
+warnings.filterwarnings(
+    "ignore",
+    message=".*Torchinductor does not support code generation for complex operators.*",
+)
 
 
 def main():
@@ -24,7 +31,7 @@ def main():
         help="Perform a quick check with 1 epoch and limited batches",
     )
     parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--num_workers", type=int, default=os.cpu_count())
+    parser.add_argument("--num_workers", type=int, default=24)
     parser.add_argument(
         "--patience", type=int, default=10, help="Early stopping patience"
     )
@@ -65,14 +72,12 @@ def main():
             prefetch_factor=args.prefetch_factor,
         )
 
-        # 2. Initialize Model Components
-        backbone = ConvNeXtV2FocusRegressor(pretrained=True)
-
         model = FocusOffsetRegressor(
-            backbone=backbone,
-            learning_rate=5e-5,  # Lowered for better stability
+            pretrained=True,
+            use_transforms=True,  # Assuming multimodal is default for kfold
+            learning_rate=5e-5,
             weight_decay=0.05,
-            save_predictions=False,  # Disable heavy CSV logging for CV speed
+            save_predictions=False,
         )
 
         # Optimization for RTX 5090: Kernel fusion and graph optimization
@@ -105,7 +110,9 @@ def main():
 
         # 4. Initialize Trainer
         trainer_kwargs = {
-            "max_epochs": 2 if args.dry_run else 60, # At least 2 epochs to test transitions
+            "max_epochs": 2
+            if args.dry_run
+            else 60,  # At least 2 epochs to test transitions
             "precision": "bf16-mixed",  # Highly recommended for RTX 5090 / Blackwell
             "accelerator": "auto",
             "devices": 1,

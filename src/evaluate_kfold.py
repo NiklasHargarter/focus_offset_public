@@ -5,7 +5,6 @@ import torch
 import yaml
 import lightning as L
 import numpy as np
-import pandas as pd
 from lightning.pytorch.cli import LightningArgumentParser
 
 import sys
@@ -21,48 +20,6 @@ from src.models.lightning_module import FocusOffsetRegressor, FocusEnsemble
 
 RESULTS_FILE = config.PROJECT_ROOT / "evaluation_results.json"
 torch.set_float32_matmul_precision("medium")
-
-
-class NaiveBaseline(L.LightningModule):
-    def test_step(self, batch, batch_idx):
-        if len(batch) == 3:
-            images, targets, _ = batch
-        else:
-            images, targets = batch
-        outputs = torch.zeros_like(targets).unsqueeze(1)
-        abs_err = torch.abs(outputs - targets.unsqueeze(1))
-        self.log("test_mae", abs_err.mean())
-        if not hasattr(self, "test_step_outputs"):
-            self.test_step_outputs = []
-        self.test_step_outputs.append(abs_err.detach().cpu())
-
-    def on_test_epoch_end(self):
-        all_errors = torch.cat(self.test_step_outputs)
-        self.log("test_mae_final", all_errors.mean())
-        self.log("test_std", all_errors.std())
-
-
-class BrennerBaseline(L.LightningModule):
-    def test_step(self, batch, batch_idx):
-        if len(batch) == 3:
-            images, targets, _ = batch
-        else:
-            images, targets = batch
-
-        # Brenner: Sum of (I[x+2] - I[x])^2
-        # images shape: (B, C, H, W)
-        # We use the green channel (index 1) or grayscale
-        gray = images.mean(dim=1, keepdim=True)
-        diff = (gray[:, :, :, 2:] - gray[:, :, :, :-2]) ** 2
-        scores = diff.sum(dim=(1, 2, 3))
-
-        # This is a bit tricky: Brenner doesn't predict offset directly,
-        # it finds the peak. But here we are given a single image and need to predict its offset.
-        # This baseline only works if we evaluate a full stack or have a way to map score to offset.
-        # For a single-image baseline, Brenner isn't directly applicable as a regressor
-        # without a reference stack.
-        # However, we can use the "Zero Offset" as the Naive baseline.
-        pass
 
 
 def load_model(model_config: str, ckpt_path: str):
@@ -159,7 +116,6 @@ def main():
         models.append(model)
 
     ensemble = FocusEnsemble(models)
-    naive_baseline = NaiveBaseline()
 
     all_summaries = []
 
@@ -215,17 +171,6 @@ def main():
             print("=" * 40)
             summary["ensemble"] = ensemble_res
 
-        # 3. Naive Baseline Evaluation
-        naive_res = evaluate_fold(
-            trainer, naive_baseline, datamodule, "Naive Baseline (Zero-Offset)"
-        )
-        if naive_res:
-            print("\n" + "=" * 40)
-            print(f"NAIVE BASELINE SUMMARY ({ds_name})")
-            print(f"MAE: {naive_res['mae']:.4f}")
-            print("=" * 40)
-            summary["naive_baseline"] = naive_res
-
         all_summaries.append(summary)
 
     # Save to history
@@ -234,7 +179,7 @@ def main():
         with open(RESULTS_FILE, "r") as f:
             try:
                 all_history = json.load(f)
-            except:
+            except Exception:
                 pass
 
     all_history.extend(all_summaries)

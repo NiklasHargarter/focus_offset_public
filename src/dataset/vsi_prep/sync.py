@@ -28,7 +28,9 @@ def sync(
     print(f"=== Syncing Dataset: {dataset_name} ===")
 
     print("\n[Step 1/2] Downloading missing files...")
-    download_dataset(dataset_name=dataset_name, force=force, limit=limit, exclude=exclude)
+    download_dataset(
+        dataset_name=dataset_name, force=force, limit=limit, exclude=exclude
+    )
 
     print("\n[Step 2/2] Extracting and verifying ZIP structures...")
     fix_zip_structure(dataset_name=dataset_name)

@@ -1,7 +1,5 @@
-import os
 import torch
 import warnings
-import lightning as L
 from lightning.pytorch.cli import LightningCLI
 
 from src.models.lightning_module import FocusOffsetRegressor

@@ -43,7 +43,9 @@ def create_split(
     target_test_samples = total_samples * split_ratio
 
     print(f"Total slides: {len(slides)}")
-    print(f"Total patches: {total_patches} | Total samples (patches * Z): {total_samples}")
+    print(
+        f"Total patches: {total_patches} | Total samples (patches * Z): {total_samples}"
+    )
     print(
         f"Target test samples: {target_test_samples:.0f} ({split_ratio:.1%} of samples)"
     )

@@ -111,7 +111,7 @@ def main():
     datamodule = VSIDataModule(
         dataset_name="ZStack_HE",
         batch_size=128,
-        num_workers=4, # Updated to 4 based on autotune
+        num_workers=4,  # Updated to 4 based on autotune
         patch_size=224,
         stride=448,
         min_tissue_coverage=0.05,
