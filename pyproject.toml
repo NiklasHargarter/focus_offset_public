@@ -23,6 +23,7 @@ dependencies = [
     "imagecodecs>=2026.1.14",
     "pywavelets>=1.9.0",
     "timm>=1.0.24",
+    "seaborn>=0.13.2",
 ]
 
 [dependency-groups]

@@ -1,15 +1,14 @@
 import lightning as L
 from torch.utils.data import DataLoader
 import torch
-import pickle
+
 import json
 import random
 from typing import Optional
-from pathlib import Path
 
 from src import config
 from src.dataset.vsi_dataset_lightning import VSIDatasetLightning
-from src.dataset.vsi_types import MasterIndex, ProcessedIndex, PreprocessConfig
+from src.dataset.vsi_types import MasterIndex, ProcessedIndex
 import numpy as np
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -19,7 +18,8 @@ from src.dataset.vsi_prep.preprocess import load_master_index
 class BaseVSIDataModule(L.LightningDataModule):
     """
     Shared base class for VSI DataModules.
-    Handles preparation, and master index filtering.
+    Preprocessing params (patch_size, stride, etc.) are read from the master index
+    — only runtime params are configurable here.
     """
 
     def __init__(
@@ -27,26 +27,12 @@ class BaseVSIDataModule(L.LightningDataModule):
         dataset_name: str = "ZStack_HE",
         batch_size: int = 32,
         num_workers: int = 4,
-        patch_size: int = 224,
-        stride: int = 448,
-        min_tissue_coverage: float = 0.05,
-        downsample_factor: int = 2,
-        split_ratio: float = 0.3,
-        force_preprocess: bool = False,
-        cache_dir: str = "cache",
         prefetch_factor: int = 4,
     ):
         super().__init__()
         self.dataset_name = dataset_name
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.patch_size = patch_size
-        self.stride = stride
-        self.downsample_factor = downsample_factor
-        self.min_tissue_coverage = min_tissue_coverage
-        self.split_ratio = split_ratio
-        self.force_preprocess = force_preprocess
-        self.cache_dir = Path(cache_dir)
         self.prefetch_factor = prefetch_factor
 
         self.train_dataset: Optional[torch.utils.data.Dataset] = None
@@ -59,11 +45,7 @@ class BaseVSIDataModule(L.LightningDataModule):
             [
                 # 1. Geometric (Scale/Rotation Invariance)
                 A.D4(p=1.0),
-                # A.RandomCrop(height=self.patch_size, width=self.patch_size, p=1.0),
-                # 2. Physics Distortion (PSF/Aberration)
-                # alpha=1 is subtle, but alpha_affine adds shifts
-                # A.ElasticTransform(alpha=1, sigma=20, p=0.2),
-                # 3. Aggressive Chroma/Stain Destruction
+                # 2. Aggressive Chroma/Stain Destruction
                 A.Compose(
                     [
                         A.ColorJitter(
@@ -74,8 +56,6 @@ class BaseVSIDataModule(L.LightningDataModule):
                     ],
                     p=1.0,
                 ),
-                # 4. Sensor Robustness (ISO Grain)
-                # A.GaussNoise(std_range=(3.16 / 255, 7.07 / 255), p=0.4),
                 A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
                 ToTensorV2(),
             ]
@@ -92,66 +72,34 @@ class BaseVSIDataModule(L.LightningDataModule):
 
     def prepare_data(self):
         """
-        Quick check for required precomputed data.
-        For 800GB+ datasets, we decouple syncing from the training loop.
+        Quick check that preprocessed data exists for this dataset.
+        All preprocessing params are baked into the master index at preprocess time.
         """
-        master_index_path = config.get_master_index_path(
-            self.dataset_name, patch_size=self.patch_size
-        )
+        master_index = load_master_index(self.dataset_name, config.PATCH_SIZE)
 
-        expected_config = PreprocessConfig(
-            patch_size=self.patch_size,
-            stride=self.stride,
-            downsample_factor=self.downsample_factor,
-            min_tissue_coverage=self.min_tissue_coverage,
-            dataset_name=self.dataset_name,
-        )
-
-        missing = []
-        if not master_index_path.exists():
-            missing.append(f"Master Manifest: {master_index_path}")
-        else:
-            # Check manifest config
-            with open(master_index_path, "rb") as f:
-                manifest_data = pickle.load(f)
-
-            if isinstance(manifest_data, dict):
-                manifest_config = manifest_data.get("config_state")
-            else:
-                manifest_config = manifest_data.config_state
-
-            if manifest_config != expected_config:
-                missing.append(
-                    f"Master Index Configuration Mismatch!\n"
-                    f"  Expected: {expected_config}\n"
-                    f"  Found:    {manifest_config}"
-                )
-
-        # Also check if any slide indices exist
-        indices_dir = config.get_slide_index_dir(self.dataset_name, self.patch_size)
-        if not any(indices_dir.glob("*.pkl")):
-            missing.append(f"No individual slide indices found in {indices_dir}")
-
-        if missing:
-            error_msg = "\n".join(missing)
+        if master_index is None:
             print(
-                f"\n[ERROR] Required data for {self.dataset_name} is missing or outdated:\n{error_msg}"
-            )
-            print(
-                "\nTo resolve this, please run the standalone synchronization script:"
-            )
-            print(
-                f"  python src/dataset/vsi_prep/sync.py --dataset {self.dataset_name} "
-                f"--patch_size {self.patch_size} --stride {self.stride} --downsample_factor {self.downsample_factor}"
-            )
-            print(
-                "\nNote: For 200GB+ datasets, this ensures a clean and traceable environment."
+                f"\n[ERROR] Master index for {self.dataset_name} not found.\n"
+                f"Run preprocessing first:\n"
+                f"  python src/dataset/vsi_prep/sync.py --dataset {self.dataset_name}"
             )
             raise RuntimeError(
-                "Data preparation check failed. See log above for sync instructions."
+                "Data preparation check failed. See log above for instructions."
             )
 
-        print(f"Data environment for {self.dataset_name} (p{self.patch_size}) is OK.")
+        # Check slide indices exist
+        indices_dir = config.get_slide_index_dir(self.dataset_name, config.PATCH_SIZE)
+        if not any(indices_dir.glob("*.pkl")):
+            raise RuntimeError(
+                f"No individual slide indices found in {indices_dir}. "
+                f"Run preprocessing for {self.dataset_name}."
+            )
+
+        cfg = master_index.config_state
+        print(
+            f"Data environment for {self.dataset_name} OK "
+            f"(p{cfg.patch_size}, stride={cfg.stride}, ds={cfg.downsample_factor})."
+        )
 
     def _filter_index(
         self, master_index: MasterIndex, files: list[str]
@@ -186,7 +134,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         )
 
     def _load_data_indices(self) -> tuple[MasterIndex, dict]:
-        master_index = load_master_index(self.dataset_name, self.patch_size)
+        master_index = load_master_index(self.dataset_name, config.PATCH_SIZE)
         split_path = config.get_split_path(self.dataset_name)
 
         if master_index is None or not split_path.exists():
@@ -212,7 +160,7 @@ class BaseVSIDataModule(L.LightningDataModule):
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
             pin_memory=torch.cuda.is_available(),
-            prefetch_factor=2 if self.num_workers > 0 else None,
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def val_dataloader(self):
@@ -221,11 +169,11 @@ class BaseVSIDataModule(L.LightningDataModule):
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
-            shuffle=True,  # Set to True to allow WSI workers to spread across slides
+            shuffle=True,  # Spread WSI workers across slides
             num_workers=self.num_workers,
-            persistent_workers=False,  # Disable to free up RAM between epochs
+            persistent_workers=self.num_workers > 0,
             pin_memory=torch.cuda.is_available(),
-            prefetch_factor=2 if self.num_workers > 0 else None,
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def test_dataloader(self):

@@ -6,7 +6,7 @@ import subprocess
 import pickle
 import lightning as L
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 from torch.utils.data import Dataset, DataLoader
 
 from src import config
@@ -94,7 +94,7 @@ class Jiang2018Dataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
         sample = self.samples[idx]
         img = cv2.imread(str(sample["path"]))
 
@@ -107,7 +107,15 @@ class Jiang2018Dataset(Dataset):
         std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
         tensor = (tensor - mean) / std
 
-        return tensor, torch.tensor(sample["offset"], dtype=torch.float32)
+        return {
+            "image": tensor,
+            "target": torch.tensor(sample["offset"], dtype=torch.float32),
+            "metadata": {
+                "z_level": 0,  # Dummy for Jiang
+                "optimal_z": 0,  # Dummy for Jiang
+                "slide_id": "jiang2018",
+            },
+        }
 
 
 class Jiang2018DataModule(L.LightningDataModule):

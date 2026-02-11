@@ -1,128 +1,92 @@
-import torch.nn as nn
-from abc import ABC, abstractmethod
-import torch.nn.functional as F
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from abc import ABC, abstractmethod
 import timm
+import ptwt
+
+
+# ---------------------------------------------------------------------------
+# Input Representations
+# ---------------------------------------------------------------------------
+
+
+class InputRepresentation(nn.Module, ABC):
+    """Base class for input representations. Each declares its output channels."""
+
+    out_channels: int
+
+    @abstractmethod
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Transform (B, 3, H, W) RGB input into (B, out_channels, H, W)."""
+        ...
+
+
+class RGBInput(InputRepresentation):
+    """Pass-through RGB channels."""
+
+    out_channels = 3
+
+    def forward(self, x):
+        return x
+
+
+class FFTInput(InputRepresentation):
+    """Log-magnitude of 2D FFT on grayscale."""
+
+    out_channels = 1
+
+    def forward(self, x):
+        gray = x.mean(dim=1, keepdim=True)
+        fft = torch.fft.fft2(gray)
+        fft_mag = torch.log1p(torch.abs(fft))
+        fft_mag = torch.fft.fftshift(fft_mag, dim=(-2, -1))
+        # Normalize to roughly match RGB distribution
+        fft_mag = (fft_mag - 4.5) / 1.0
+        return fft_mag
+
+
+class DWTInput(InputRepresentation):
+    """Haar wavelet detail coefficients (LH, HL, HH)."""
+
+    out_channels = 3
+
+    def forward(self, x):
+        gray = x.mean(dim=1, keepdim=True)
+        coeffs = ptwt.wavedec2(gray, wavelet="haar", level=1)
+        _, (LH, HL, HH) = coeffs
+        dwt_details = torch.cat([LH, HL, HH], dim=1)
+        # Scale to roughly unit variance
+        dwt_details = dwt_details * 2.0
+        # Upsample to match input resolution
+        dwt_up = F.interpolate(dwt_details, size=x.shape[-2:], mode="nearest")
+        return dwt_up
+
+
+# ---------------------------------------------------------------------------
+# Backbone
+# ---------------------------------------------------------------------------
 
 
 class BaseFocusRegressor(nn.Module, ABC):
-    """
-    Abstract base class for all focus regressors.
-    Ensures that every model outputs a single scalar for regression.
-    """
-
-    def __init__(self):
-        super().__init__()
+    """Abstract base class for focus regressors."""
 
     @abstractmethod
-    def forward(self, x):
-        pass
-
-
-def haar_dwt(x):
-    """
-    Simple 2D Haar DWT implementation in PyTorch.
-    x: (B, C, H, W)
-    Returns: (B, C*4, H/2, W/2) corresponding to LL, LH, HL, HH
-    """
-    b, c, h, w = x.shape
-
-    # Reshape to (b, c, h/2, 2, w/2, 2)
-    # Pad if dimensions are odd
-    if h % 2 != 0 or w % 2 != 0:
-        x = F.pad(x, (0, w % 2, 0, h % 2))
-        b, c, h, w = x.shape
-
-    x_eshaped = x.view(b, c, h // 2, 2, w // 2, 2)
-
-    # Average and difference along rows (last dim)
-    x0 = x_eshaped[..., 0]
-    x1 = x_eshaped[..., 1]
-    L = x0 + x1
-    H = x0 - x1
-
-    # Now columns
-    LL = L[:, :, :, 0, :] + L[:, :, :, 1, :]
-    LH = L[:, :, :, 0, :] - L[:, :, :, 1, :]
-    HL = H[:, :, :, 0, :] + H[:, :, :, 1, :]
-    HH = H[:, :, :, 0, :] - H[:, :, :, 1, :]
-
-    # Stack channels: (b, c, 4, h/2, w/2) -> (b, c*4, h/2, w/2)
-    out = torch.stack([LL, LH, HL, HH], dim=2)
-    out = out.reshape(b, c * 4, h // 2, w // 2)
-
-    return out * 0.5
-
-
-class InputTransformLayer(nn.Module):
-    def __init__(self, mode: str = "all"):
-        """
-        Selective input transformation layer.
-        mode: 'fft', 'dwt', or 'all'
-        """
-        super().__init__()
-        self.mode = mode
-
-    def forward(self, x):
-        # x: (B, 3, H, W)
-        # Convert to grayscale for transforms (B, 1, H, W)
-        gray = x.mean(dim=1, keepdim=True)
-        features = [x]
-
-        # 1. FFT
-        if self.mode in ["all", "fft"]:
-            fft = torch.fft.fft2(gray)
-            fft_mag = torch.log1p(torch.abs(fft))
-            fft_mag = torch.fft.fftshift(fft_mag, dim=(-2, -1))
-
-            # FFT Normalization (Empirical values from diagnostics)
-            # Shift and scale to match RGB distribution (roughly mean 0, std 1)
-            fft_mag = (fft_mag - 4.5) / 1.0
-            features.append(fft_mag)
-
-        # 2. DWT
-        if self.mode in ["all", "dwt"]:
-            dwt = haar_dwt(gray)
-            dwt_details = dwt[:, 1:4]  # Take LH, HL, HH
-
-            # DWT Normalization (Details are already zero-centered, but std is ~0.5)
-            dwt_details = dwt_details * 2.0
-
-            # Upsample DWT to match input resolution for concatenation
-            dwt_up = F.interpolate(dwt_details, size=x.shape[-2:], mode="nearest")
-            features.append(dwt_up)
-
-        # Concatenate spatial and enabled frequency features
-        return torch.cat(features, dim=1)
-
-
-# ... (keep other classes) ...
+    def forward(self, x): ...
 
 
 class ConvNeXtV2FocusRegressor(BaseFocusRegressor):
     """
-    State-of-the-art ConvNeXt V2 (with GRN).
-    Supports multiple ablation modes: 'none', 'fft', 'dwt', 'all'.
+    ConvNeXt V2 backbone with composable input representations.
+    Input channels are computed from the representation list.
+    Prefer using the concrete subclasses below instead of this directly.
     """
 
-    def __init__(self, pretrained: bool = False, transform_mode: str = "all"):
+    def __init__(self, representations: list[InputRepresentation]):
         super().__init__()
-        self.transform_mode = transform_mode
+        self.representations = nn.ModuleList(representations)
+        in_chans = sum(r.out_channels for r in representations)
 
-        # Number of input channels depends on the mode
-        if transform_mode == "none":
-            in_chans = 3
-        elif transform_mode == "fft":
-            in_chans = 4  # RGB (3) + FFT (1)
-        elif transform_mode == "dwt":
-            in_chans = 6  # RGB (3) + DWT (3)
-        elif transform_mode == "all":
-            in_chans = 7  # RGB (3) + FFT (1) + DWT (3)
-        else:
-            raise ValueError(f"Unknown transform_mode: {transform_mode}")
-
-        # We train from scratch (pretrained=False) to simplify the integration
-        # of non-RGB channels and better adapt to the microscopy domain.
         self.model = timm.create_model(
             "convnextv2_tiny",
             pretrained=False,
@@ -130,10 +94,49 @@ class ConvNeXtV2FocusRegressor(BaseFocusRegressor):
             in_chans=in_chans,
         )
 
-        if self.transform_mode != "none":
-            self.transform_layer = InputTransformLayer(mode=self.transform_mode)
-
     def forward(self, x):
-        if self.transform_mode != "none":
-            x = self.transform_layer(x)
+        features = [r(x) for r in self.representations]
+        x = torch.cat(features, dim=1)
         return self.model(x)
+
+
+# ---------------------------------------------------------------------------
+# Concrete Models — use these instead of composing manually
+# ---------------------------------------------------------------------------
+
+
+class RGBModel(ConvNeXtV2FocusRegressor):
+    """RGB-only baseline (3 channels)."""
+
+    def __init__(self):
+        super().__init__(representations=[RGBInput()])
+
+
+class FFTModel(ConvNeXtV2FocusRegressor):
+    """FFT-only model (1 channel)."""
+
+    def __init__(self):
+        super().__init__(representations=[FFTInput()])
+
+
+class DWTModel(ConvNeXtV2FocusRegressor):
+    """DWT-only model (3 channels)."""
+
+    def __init__(self):
+        super().__init__(representations=[DWTInput()])
+
+
+class MultimodalModel(ConvNeXtV2FocusRegressor):
+    """RGB + FFT + DWT ensemble (7 channels)."""
+
+    def __init__(self):
+        super().__init__(representations=[RGBInput(), FFTInput(), DWTInput()])
+
+
+# Registry for model lookup by name
+MODEL_REGISTRY = {
+    "rgb": RGBModel,
+    "fft": FFTModel,
+    "dwt": DWTModel,
+    "multimodal": MultimodalModel,
+}

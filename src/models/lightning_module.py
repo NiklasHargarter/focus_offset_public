@@ -2,31 +2,34 @@ import torch
 import torch.nn as nn
 import lightning as L
 import math
+from torchmetrics import MeanAbsoluteError
+from src.models.architectures import (
+    MODEL_REGISTRY,
+)
 
 
 class FocusOffsetRegressor(L.LightningModule):
     """
     LightningModule for focus offset regression.
-    Supports ablation studies with configurable input domains (RGB, FFT, DWT).
+    Handles training, validation, and basic test metrics only.
+    Detailed analysis belongs in dedicated evaluation scripts.
     """
 
     def __init__(
         self,
-        pretrained: bool = False,
-        transform_mode: str = "all",
+        model_name: str = "multimodal",
         learning_rate: float = 1e-4,
         weight_decay: float = 0.05,
-        save_predictions: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
 
-        from src.models.architectures import ConvNeXtV2FocusRegressor
+        if model_name not in MODEL_REGISTRY:
+            raise ValueError(
+                f"Unknown model name: {model_name}. Available: {list(MODEL_REGISTRY.keys())}"
+            )
 
-        self.backbone = ConvNeXtV2FocusRegressor(
-            pretrained=pretrained, transform_mode=transform_mode
-        )
-
+        self.backbone = MODEL_REGISTRY[model_name]()
         # Optimization: Use channels_last memory format
         self.backbone.to(memory_format=torch.channels_last)
 
@@ -34,46 +37,52 @@ class FocusOffsetRegressor(L.LightningModule):
         self.weight_decay = weight_decay
         self.criterion = nn.HuberLoss(delta=1.0)
 
+        # Metrics
+        self.val_mae = MeanAbsoluteError()
+        self.test_mae = MeanAbsoluteError()
+
     def forward(self, x):
         return self.backbone(x)
 
-    def _unpack_batch(self, batch):
-        """Unpacks batch into images and targets, handling optional metadata."""
-        if len(batch) == 3:
-            images, targets, _ = batch
-        else:
-            images, targets = batch
-        return images, targets
-
-    def _shared_step(self, batch):
-        images, targets = self._unpack_batch(batch)
-
+    def training_step(self, batch, batch_idx):
+        images, targets = batch["image"], batch["target"]
         if images.device.type == "cuda":
             images = images.to(memory_format=torch.channels_last)
 
-        targets = targets.unsqueeze(1)
-        outputs = self(images)
-        loss = self.criterion(outputs, targets)
+        preds = self(images)
+        loss = self.criterion(preds, targets.unsqueeze(1))
 
-        return loss, outputs, targets
-
-    def training_step(self, batch, batch_idx):
-        loss, _, _ = self._shared_step(batch)
         self.log(
             "train_loss",
             loss,
-            on_step=False,
+            on_step=True,
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
-            batch_size=batch[0].size(0),
         )
+
+        # Log learning rate
+        sch = self.lr_schedulers()
+        if sch is not None:
+            self.log(
+                "lr", sch.get_last_lr()[0], on_step=True, on_epoch=False, prog_bar=False
+            )
+
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        loss, outputs, targets = self._shared_step(batch)
-        mae = torch.abs(outputs - targets).mean()
+    def _common_eval_step(self, batch):
+        images, targets = batch["image"], batch["target"]
+        if images.device.type == "cuda":
+            images = images.to(memory_format=torch.channels_last)
 
+        preds = self(images)
+        loss = self.criterion(preds, targets.unsqueeze(1))
+        return loss, preds, targets
+
+    def validation_step(self, batch, batch_idx):
+        loss, preds, targets = self._common_eval_step(batch)
+
+        self.val_mae(preds, targets.unsqueeze(1))
         self.log(
             "val_loss",
             loss,
@@ -81,55 +90,38 @@ class FocusOffsetRegressor(L.LightningModule):
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
-            batch_size=batch[0].size(0),
         )
         self.log(
             "val_mae",
-            mae,
+            self.val_mae,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
-            batch_size=batch[0].size(0),
         )
         return loss
 
     def test_step(self, batch, batch_idx):
-        loss, outputs, targets = self._shared_step(batch)
-        abs_err = torch.abs(outputs - targets)
+        loss, preds, targets = self._common_eval_step(batch)
 
-        self.log(
-            "test_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            sync_dist=True,
-            batch_size=batch[0].size(0),
-        )
+        self.test_mae(preds, targets.unsqueeze(1))
+        self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         self.log(
             "test_mae",
-            abs_err.mean(),
+            self.test_mae,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
-            batch_size=batch[0].size(0),
         )
+        return loss
 
-        if not hasattr(self, "test_step_outputs"):
-            self.test_step_outputs = []
-        self.test_step_outputs.append(abs_err.detach().cpu())
-
-        return abs_err
-
-    def on_test_epoch_end(self):
-        if hasattr(self, "test_step_outputs"):
-            all_errors = torch.cat(self.test_step_outputs)
-            mae = all_errors.mean()
-            std = all_errors.std()
-            self.log("test_mae_final", mae)
-            self.log("test_std", std)
-            del self.test_step_outputs
+    def predict_step(self, batch, batch_idx):
+        """Return raw predictions only. Eval scripts pair these with batch data."""
+        images = batch["image"]
+        if images.device.type == "cuda":
+            images = images.to(memory_format=torch.channels_last)
+        return self(images)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

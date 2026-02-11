@@ -74,7 +74,7 @@ class VSIDatasetLightning(Dataset):
     def __len__(self) -> int:
         return self.total_samples
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, dict]:
+    def __getitem__(self, idx: int) -> dict[str, Any]:
         """
         Maps a global linear index to a specific (Slide, Patch, Z-slice) triplet.
         Calculates the focus offset in microns relative to the precomputed 'sharpest' Z.
@@ -108,13 +108,13 @@ class VSIDatasetLightning(Dataset):
                 "Physical micron-based focus offset cannot be calculated."
             )
         z_res_microns = z_res * 1e6
-        z_offset = float(best_z - z_level) * z_res_microns
+        z_offset = (best_z - z_level) * z_res_microns
 
         rect = (
             int(x),
             int(y),
-            int(self.patch_size * self.downsample_factor),
-            int(self.patch_size * self.downsample_factor),
+            self.patch_size * self.downsample_factor,
+            self.patch_size * self.downsample_factor,
         )
         try:
             # Efficient single-slice read from VSI, with downscaling
@@ -134,11 +134,15 @@ class VSIDatasetLightning(Dataset):
                 "filename": vsi_name,
                 "x": int(x),
                 "y": int(y),
-                "z_level": int(z_level),
+                "z_level": z_level,
                 "optimal_z": int(best_z),
             }
 
-            return image, torch.tensor(z_offset, dtype=torch.float32), metadata
+            return {
+                "image": image,
+                "target": torch.tensor(z_offset, dtype=torch.float32),
+                "metadata": metadata,
+            }
 
         except Exception as e:
             raw_dir = config.get_vsi_raw_dir(self.dataset_name)
