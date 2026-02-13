@@ -7,29 +7,25 @@ import argparse
 import os
 import warnings
 
-import torch
 import lightning as L
+import torch
 from lightning.pytorch.callbacks import (
-    ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
+    ModelCheckpoint,
 )
 from lightning.pytorch.loggers import CSVLogger
 
-from src.models.lightning_module import FocusOffsetRegressor
-from src.models.architectures import MODEL_REGISTRY
+from src import config
 from src.dataset.vsi_datamodule import VSIDataModule
+from src.models.architectures import MODEL_REGISTRY
+from src.models.lightning_module import FocusOffsetRegressor
 
 # Suppress harmless TorchInductor warning for FFT (Complex Operators)
 warnings.filterwarnings(
     "ignore",
     message=".*Torchinductor does not support code generation for complex operators.*",
 )
-
-# Defaults that rarely change
-LOG_EVERY_N_STEPS = 100
-NUM_WORKERS = 16
-PREFETCH_FACTOR = 4
 
 
 def setup_environment():
@@ -46,6 +42,7 @@ def train_one(
     max_epochs: int = 50,
     patience: int = 5,
     dry_run: bool = False,
+    seed: int = 42,
 ) -> L.Trainer:
     """
     Train a single model. Returns the trainer for post-training inspection.
@@ -57,7 +54,10 @@ def train_one(
         max_epochs: Maximum training epochs.
         patience: Early stopping patience (epochs without val_loss improvement).
         dry_run: If True, run 2 epochs with limited batches for smoke testing.
+        seed: Random seed for reproducibility.
     """
+    L.seed_everything(seed, workers=True)
+
     # Logger
     log_dir = "logs_smoke_test" if dry_run else "logs"
     logger = CSVLogger(log_dir, name=log_name)
@@ -69,6 +69,7 @@ def train_one(
             mode="min",
             save_top_k=1,
             filename="best-e{epoch:02d}-vl{val_loss:.4f}",
+            auto_insert_metric_name=False,
         ),
         EarlyStopping(monitor="val_loss", patience=patience, mode="min"),
         LearningRateMonitor(logging_interval="step"),
@@ -82,8 +83,9 @@ def train_one(
         "devices": 1,
         "logger": logger,
         "callbacks": callbacks,
-        "log_every_n_steps": 5 if dry_run else LOG_EVERY_N_STEPS,
+        "log_every_n_steps": 5 if dry_run else config.LOG_EVERY_N_STEPS,
         "gradient_clip_val": 1.0,
+        "deterministic": True,
     }
 
     if dry_run:
@@ -111,25 +113,22 @@ def main():
         action="store_true",
         help="Quick smoke test with 2 epochs and limited batches",
     )
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--max_epochs", type=int, default=50)
-    parser.add_argument("--patience", type=int, default=5)
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--batch_size", type=int, default=config.BATCH_SIZE)
+    parser.add_argument("--max_epochs", type=int, default=config.MAX_EPOCHS)
+    parser.add_argument("--patience", type=int, default=config.PATIENCE)
+    parser.add_argument("--learning_rate", type=float, default=config.LEARNING_RATE)
     args = parser.parse_args()
 
     setup_environment()
 
     datamodule = VSIDataModule(
-        dataset_name="ZStack_HE",
         batch_size=args.batch_size,
-        num_workers=NUM_WORKERS,
-        prefetch_factor=PREFETCH_FACTOR,
     )
 
     model = FocusOffsetRegressor(
         model_name=args.model,
         learning_rate=args.learning_rate,
-        weight_decay=0.05,
+        weight_decay=config.WEIGHT_DECAY,
     )
 
     train_one(

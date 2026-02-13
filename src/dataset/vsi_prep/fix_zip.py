@@ -1,10 +1,12 @@
-import zipfile
 import argparse
 import shutil
+import zipfile
 from pathlib import Path
+
+import slideio
+
 from src import config
 from src.utils.io_utils import suppress_stderr
-import slideio
 
 
 def extract_zip(zip_path: Path, extract_target: Path) -> bool:

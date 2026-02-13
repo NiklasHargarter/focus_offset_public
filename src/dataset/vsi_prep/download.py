@@ -1,18 +1,20 @@
-import os
 import argparse
 import concurrent.futures
+import os
 from concurrent.futures import ThreadPoolExecutor
-from src import config
-from exact_sync.v1.configuration import Configuration
-from exact_sync.v1.api_client import ApiClient
+
 from exact_sync.v1.api.images_api import ImagesApi
-from src.utils.exact_utils import get_exact_image_list
+from exact_sync.v1.api_client import ApiClient
+from exact_sync.v1.configuration import Configuration
+
+from src import config
 from src.dataset.vsi_prep.fix_zip import (
-    extract_zip,
-    verify_vsi,
-    organize_vsi_files,
     cleanup_corrupt_vsi,
+    extract_zip,
+    organize_vsi_files,
+    verify_vsi,
 )
+from src.utils.exact_utils import get_exact_image_list
 
 
 def process_image(img_info, dataset_name, raw_dir, zip_dir, keep_zip):
@@ -80,7 +82,7 @@ def download_dataset(
     force: bool = False,
     keep_zip: bool = False,
     limit: int = None,
-    exclude: str = None,
+    exclude: str = config.EXCLUDE_PATTERN,
     workers: int = 4,
 ) -> None:
     """Download, extract, and verify VSI files in parallel."""
@@ -148,7 +150,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exclude",
         type=str,
-        default=None,
+        default=config.EXCLUDE_PATTERN,
         help="Exclude slides containing this string in their name",
     )
     parser.add_argument(

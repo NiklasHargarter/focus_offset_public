@@ -9,6 +9,7 @@
         "039_1_HE_stack.vsi",
         "041_1_HE_stack.vsi",
         "042_1_HE_stack.vsi",
+        "046_1_HE_stack.vsi",
         "050_1_HE_stack.vsi",
         "054_1_HE_stack.vsi",
         "058_1_HE_stack.vsi",
@@ -58,7 +59,6 @@
         "043_1_HE_stack.vsi",
         "044_1_HE_stack.vsi",
         "045_1_HE_stack.vsi",
-        "046_1_HE_stack.vsi",
         "047_1_HE_stack.vsi",
         "048_1_HE_stack.vsi",
         "049_1_HE_stack.vsi",
@@ -102,6 +102,6 @@
     ],
     "seed": 42,
     "total_slides": 97,
-    "total_patches": 57032,
-    "total_samples": 1539864
+    "total_patches": 233125,
+    "total_samples": 6294375
 }

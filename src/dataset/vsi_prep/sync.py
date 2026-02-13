@@ -1,14 +1,14 @@
 import argparse
+
 from src import config
+from src.dataset.vsi_prep.create_split import create_split
 from src.dataset.vsi_prep.download import download_dataset
 from src.dataset.vsi_prep.fix_zip import fix_zip_structure
 from src.dataset.vsi_prep.preprocess import preprocess_dataset
-from src.dataset.vsi_prep.create_split import create_split
 
 
 def sync(
     dataset_name: str,
-    patch_size: int,
     stride: int,
     downsample_factor: int,
     min_tissue_coverage: float,
@@ -16,7 +16,7 @@ def sync(
     skip_preprocess: bool = False,
     skip_split: bool = False,
     limit: int = None,
-    exclude: str = None,
+    exclude: str = config.EXCLUDE_PATTERN,
 ):
     """
     Orchestrates the full dataset preparation pipeline:
@@ -39,7 +39,6 @@ def sync(
         print("\n[Step 3] Preprocessing (Incremental)...")
         preprocess_dataset(
             dataset_name=dataset_name,
-            patch_size=patch_size,
             stride=stride,
             downsample_factor=downsample_factor,
             min_tissue_coverage=min_tissue_coverage,
@@ -50,7 +49,13 @@ def sync(
 
     if not skip_split:
         print("\n[Step 4] Updating splits...")
-        create_split(dataset_name=dataset_name, force=force)
+        create_split(
+            dataset_name=dataset_name,
+            stride=stride,
+            downsample_factor=downsample_factor,
+            min_tissue_coverage=min_tissue_coverage,
+            force=force,
+        )
     else:
         print("\n[Step 4] Skipping Split Generation.")
 
@@ -62,10 +67,9 @@ if __name__ == "__main__":
         description="Synchronize and preprocess the dataset."
     )
     parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
-    parser.add_argument("--patch_size", type=int, default=224)
-    parser.add_argument("--stride", type=int, default=448)
-    parser.add_argument("--downsample_factor", type=int, default=2)
-    parser.add_argument("--min_tissue_coverage", type=float, default=0.05)
+    parser.add_argument("--stride", type=int, default=config.STRIDE)
+    parser.add_argument("--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR)
+    parser.add_argument("--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE)
     parser.add_argument(
         "--force", action="store_true", help="Force re-preprocessing of ALL files"
     )
@@ -81,14 +85,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exclude",
         type=str,
-        default=None,
+        default=config.EXCLUDE_PATTERN,
         help="Exclude slides containing this string in their name",
     )
 
     args = parser.parse_args()
     sync(
         args.dataset,
-        args.patch_size,
         args.stride,
         args.downsample_factor,
         args.min_tissue_coverage,

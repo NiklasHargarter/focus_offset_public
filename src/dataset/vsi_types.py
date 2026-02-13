@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+
 import numpy as np
 
 
@@ -7,8 +8,6 @@ class SlideMetadata:
     """Metadata for a single VSI slide (Coordinates are in RAW 60x resolution)."""
 
     name: str
-    width: int
-    height: int
     num_z: int
     patches: np.ndarray  # Shape (N, 3) -> [raw_x, raw_y, best_z]
 
@@ -25,13 +24,11 @@ class SlideMetadata:
 class PreprocessConfig:
     """Configuration used during preprocessing for traceability."""
 
-    patch_size: int  # Output image size (e.g. 224)
-    stride: int  # Step size in output coordinates (e.g. 224 for adjacent)
+    patch_size: int  # ViT output size, always 224
+    stride: int  # Step size in raw image coordinates (e.g. 448)
     min_tissue_coverage: float
     dataset_name: str
-    downsample_factor: int = 1
-    enable_ambiguity_filter: bool = True
-    enable_spatial_filter: bool = True
+    downsample_factor: int = 1  # Raw extent per patch = patch_size × ds
 
 
 @dataclass
@@ -39,7 +36,6 @@ class MasterIndex:
     """Consolidated index for all slides in a dataset."""
 
     file_registry: list[SlideMetadata]
-    patch_size: int
     config_state: PreprocessConfig
 
     @property

@@ -1,14 +1,16 @@
+import bisect
+import os
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+import slideio
 import torch
 from torch.utils.data import Dataset
-import bisect
-import slideio
-import os
-from typing import Optional, Callable, Any
-from pathlib import Path
-from src import config
-from src.utils.io_utils import suppress_stderr
 
+from src import config
 from src.dataset.vsi_types import ProcessedIndex, SlideMetadata
+from src.utils.io_utils import suppress_stderr
 
 
 class VSIDatasetLightning(Dataset):
@@ -21,7 +23,7 @@ class VSIDatasetLightning(Dataset):
     def __init__(
         self,
         index_data: ProcessedIndex,
-        transform: Optional[Callable[[Any], torch.Tensor]] = None,
+        transform: Callable[[Any], torch.Tensor] | None = None,
     ):
         self.index = index_data
         self.transform = transform
@@ -110,11 +112,12 @@ class VSIDatasetLightning(Dataset):
         z_res_microns = z_res * 1e6
         z_offset = (best_z - z_level) * z_res_microns
 
+        raw_extent = self.patch_size * self.downsample_factor
         rect = (
             int(x),
             int(y),
-            self.patch_size * self.downsample_factor,
-            self.patch_size * self.downsample_factor,
+            raw_extent,
+            raw_extent,
         )
         try:
             # Efficient single-slice read from VSI, with downscaling
@@ -148,4 +151,4 @@ class VSIDatasetLightning(Dataset):
             raw_dir = config.get_vsi_raw_dir(self.dataset_name)
             full_path = raw_dir / vsi_name
             print(f"Error reading {full_path} at {rect} z={z_level}: {e}")
-            raise e
+            raise

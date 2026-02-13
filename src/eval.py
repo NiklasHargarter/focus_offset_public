@@ -10,9 +10,11 @@ import lightning as L
 import pandas as pd
 import torch
 
+from src import config
+from src.dataset import DATAMODULE_REGISTRY
 from src.dataset.vsi_datamodule import VSIDataModule
 from src.models.lightning_module import FocusOffsetRegressor
-from src.train import NUM_WORKERS, PREFETCH_FACTOR, setup_environment
+from src.train import setup_environment
 
 
 def eval_one(
@@ -55,12 +57,22 @@ def eval_one(
     predictions = trainer.predict(model, datamodule=datamodule)
     all_preds = torch.cat(predictions).squeeze()
 
+    return _build_results_df(datamodule, all_preds, len(predictions), label, output_dir)
+
+
+def _build_results_df(
+    datamodule: L.LightningDataModule,
+    all_preds: torch.Tensor,
+    num_batches: int,
+    label: str,
+    output_dir: str | Path | None,
+) -> pd.DataFrame:
+    """Build a results DataFrame from predictions, targets, and metadata."""
     # Collect targets and metadata from the test dataloader
     all_targets = []
     all_metadata = []
 
     dataloader = datamodule.test_dataloader()
-    num_batches = len(predictions)
 
     for i, batch in enumerate(dataloader):
         if i >= num_batches:
@@ -131,7 +143,14 @@ def main():
         default="eval_results",
         help="Directory to save predictions CSV",
     )
-    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--batch_size", type=int, default=config.BATCH_SIZE)
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="he",
+        choices=list(DATAMODULE_REGISTRY.keys()),
+        help="Dataset to evaluate on (default: he)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Quick smoke test")
     args = parser.parse_args()
 
@@ -141,16 +160,10 @@ def main():
     # e.g. logs/rgb/version_0/checkpoints/best.ckpt -> "rgb"
     if args.label is None:
         ckpt = Path(args.checkpoint)
-        # Walk up from checkpoint to find the log_name directory
-        # Structure: logs/<log_name>/version_N/checkpoints/<file>.ckpt
-        args.label = ckpt.parents[2].name
+        args.label = f"{ckpt.parents[2].name}_{args.dataset}"
 
-    datamodule = VSIDataModule(
-        dataset_name="ZStack_HE",
-        batch_size=args.batch_size,
-        num_workers=NUM_WORKERS,
-        prefetch_factor=PREFETCH_FACTOR,
-    )
+    dm_factory = DATAMODULE_REGISTRY[args.dataset]
+    datamodule = dm_factory(batch_size=args.batch_size)
 
     eval_one(
         datamodule=datamodule,

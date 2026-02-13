@@ -1,13 +1,16 @@
-import random
 import argparse
 import json
-from src import config
+import random
 
+from src import config
 from src.dataset.vsi_prep.preprocess import load_master_index
 
 
 def create_split(
     dataset_name: str,
+    stride: int = config.STRIDE,
+    downsample_factor: int = config.DOWNSAMPLE_FACTOR,
+    min_tissue_coverage: float = config.MIN_TISSUE_COVERAGE,
     force: bool = False,
     split_ratio: float = 0.3,
     seed: int = 42,
@@ -19,7 +22,9 @@ def create_split(
         print(f"Split file {split_file} already exists. Skipping generation.")
         return
 
-    master_index = load_master_index(dataset_name, config.PATCH_SIZE)
+    master_index = load_master_index(
+        dataset_name, stride, downsample_factor, min_tissue_coverage
+    )
 
     if master_index is None:
         print(
@@ -88,7 +93,10 @@ def create_split(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="ZStack_HE")
+    parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
+    parser.add_argument("--stride", type=int, default=config.STRIDE)
+    parser.add_argument("--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR)
+    parser.add_argument("--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--split_ratio", type=float, default=0.3)
     parser.add_argument("--force", action="store_true")
@@ -96,6 +104,9 @@ if __name__ == "__main__":
 
     create_split(
         dataset_name=args.dataset,
+        stride=args.stride,
+        downsample_factor=args.downsample_factor,
+        min_tissue_coverage=args.min_tissue_coverage,
         force=args.force,
         seed=args.seed,
         split_ratio=args.split_ratio,

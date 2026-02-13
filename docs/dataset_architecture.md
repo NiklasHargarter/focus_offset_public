@@ -7,12 +7,13 @@ The system uses a metadata-driven approach where data preparation is decoupled f
 
 1.  **Raw Data**: All VSI files reside in dataset-specific directories (e.g., `<DATA_ROOT>/ZStack_HE/raws`).
 2.  **Master Index**: Preprocessing converts all raw slides into a single holistic `master_index_{dataset}.pkl`.
-3.  **Primary Split**: A `splits_{dataset}.json` defines the balanced **test** set and the **train_pool** (everyone else).
+3.  **Primary Split**: A `splits_{dataset}.json` in `splits/` defines the balanced **test** set and the **train_pool** (everyone else).
 4.  **Specialized DataModules**: DataModules filter the master index at runtime to create specific folds or hold-out splits.
 
 ```
 project_root/
-├── splits_ZStack_HE.json      # Balanced test vs train_pool
+├── splits/
+│   └── splits_ZStack_HE.json  # Balanced test vs train_pool
 ├── cache/
 │   ├── master_index_ZStack_HE.pkl  # Processed metadata for ALL slides
 │   └── ...
@@ -105,7 +106,7 @@ class MasterIndex:
 }
 ```
 
-### B. Split Lockfile (`splits_{dataset}.json`)
+### B. Split Lockfile (`splits/{splits_{dataset}.json}`)
 A human-readable JSON that defines the primary distribution of slides.
 
 ```json

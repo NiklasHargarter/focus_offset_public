@@ -5,6 +5,29 @@ This document explains the preprocessing pipeline for VSI datasets and the ratio
 ## Overview
 The goal of the preprocessing pipeline is to convert raw Whole Slide Images (WSI) in VSI format into a structured set of training patches with reliable "ground truth" focus designations.
 
+## Pipeline Architecture
+
+The preprocessing is split into shared, format-agnostic modules and format-specific scripts:
+
+```
+src/dataset/prep/                  # Shared modules
+    tissue_detection.py            # Otsu-based tissue masking (histolab)
+    grid.py                        # Coverage-filtered patch grid (integral image)
+
+src/dataset/vsi_prep/preprocess.py # VSI-specific pipeline (slideio)
+src/dataset/ome_prep/preprocess.py # OME-TIFF pipeline (tifffile)
+```
+
+### Single-slide processing steps
+
+Each slide goes through five named functions, called in order by `process_slide`:
+
+1. **`read_thumbnail_rgb`** — read a 16× downsampled RGB thumbnail from z-slice 0
+2. **`detect_tissue_mask`** — generate a binary tissue mask via histolab's pipeline (grayscale conversion → Otsu → dilation → remove small holes/objects)
+3. **`generate_patch_candidates`** — lay a grid over the slide and keep only patches with sufficient tissue coverage, using an integral image for O(1) coverage lookup
+4. **`find_best_z_per_patch`** — for each accepted patch, read the full z-stack and select the sharpest slice via Brenner gradient
+5. **`build_patch_index`** — combine (x, y) positions with best-z into the final `(N, 3)` int32 array
+
 ## Focal Plane Estimation Strategy
 A critical challenge in Z-stack datasets is the instability of per-patch focus estimation. Small regions (e.g., 128x128) often lack sufficient texture or contain artifacts that lead to erratic focus scoring.
 

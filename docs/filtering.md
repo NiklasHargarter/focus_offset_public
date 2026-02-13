@@ -2,8 +2,8 @@
 
 This document describes the automated filtering pipeline used to ensure the `ZStack_HE` dataset contains only high-quality, physically consistent focus labels.
 
-## 1. Aggressive Tissue Masking (Pre-scan)
-Before running focus detection, we identify "foreground" tissue to simulate a sparse scanning pattern.
+## 1. Tissue Masking (Pre-scan)
+Before running focus detection, we identify "foreground" tissue to skip empty background regions.
 
 ### The Problem
 Classic thresholding often picks up:
@@ -12,15 +12,17 @@ Classic thresholding often picks up:
 *   Faint smudges or marker pen ink.
 
 ### The Solution
-We implemented a **Stricter Masking Protocol**:
-1.  **Modified Otsu Threshold**:
-    *   Standard Otsu finds a threshold $T$.
-    *   We use $T' = T \times 0.90$.
-    *   **Why?** This shifts the cutoff towards darker pixels, rejecting faint/light-gray background noise.
-2.  **Morphological Opening**:
-    *   Operation: `Erosion` followed by `Dilation`.
-    *   Kernel Size: $5 \times 5$ pixels (on 16x downscaled image).
-    *   **Why?** This removes any object smaller than $\approx 80 \times 80$ physical pixels (like dust) while preserving continuous tissue chunks.
+Tissue masking is handled by a shared module (`src/dataset/prep/tissue_detection.py`) using **histolab**'s recommended composition pipeline:
+
+1.  **RGB → Grayscale** conversion
+2.  **Otsu Threshold** — separates tissue from background
+3.  **Binary Dilation** (disk size 5) — fills small gaps within tissue
+4.  **Remove Small Holes** (area < 3000) — closes internal voids
+5.  **Remove Small Objects** (size < 3000) — removes dust and debris
+
+This pipeline is shared across both VSI and OME-TIFF preprocessing. The caller reads a 16× downsampled RGB thumbnail from z-slice 0 and passes it in; the function returns a binary uint8 mask.
+
+Grid candidate generation (`src/dataset/prep/grid.py`) then uses an integral image to compute tissue coverage per patch in O(1), accepting only patches above `min_tissue_coverage`.
 
 ---
 
@@ -53,8 +55,10 @@ We assume tissue generally lies flat on the glass (or follows a smooth curve).
 | Parameter | Value | Description |
 | :--- | :--- | :--- |
 | `MASK_DOWNSCALE` | 16 | Resolution factor for tissue masking (speed optimization) |
-| `Otsu Factor` | 0.90 | Aggressiveness of background rejection (Lower = Stricter) |
-| `Morph Kernel` | 5x5 | Minimum object size (in downscaled pixels) to be kept |
+| `Otsu` | histolab default | Automatic threshold via `OtsuThreshold` filter |
+| `Dilation disk` | 5 | Binary dilation disk size (fills small gaps) |
+| `Small holes` | 3000 | Area threshold for `RemoveSmallHoles` |
+| `Small objects` | 3000 | Min size for `RemoveSmallObjects` |
 | `Spatial Threshold` | 4.0 | Max allowed Z-distance from the local tissue plane (slices) |
 | `Min Prominence` | 0.85 | Rejection ratio for double peaks (Lower = Stricter/More Rejections) |
 

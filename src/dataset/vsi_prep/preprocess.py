@@ -1,180 +1,121 @@
-import os
 import argparse
+import json
 import multiprocessing
+import os
 import pickle
+from dataclasses import asdict
 from functools import partial
 from pathlib import Path
-from skimage.filters import threshold_otsu
-from typing import Any, Tuple, List
+
 import cv2
 import numpy as np
 import slideio
-import json
-from dataclasses import asdict
 
-from src.utils.io_utils import suppress_stderr
 from src import config
-from src.dataset.vsi_types import SlideMetadata, PreprocessConfig, MasterIndex
+from src.dataset.prep.grid import filter_by_tissue_coverage, generate_grid
+from src.dataset.prep.tissue_detection import detect_tissue_mask
+from src.dataset.vsi_types import MasterIndex, PreprocessConfig, SlideMetadata
 from src.utils.focus_metrics import compute_brenner_gradient
+from src.utils.io_utils import suppress_stderr
 
-MASK_DOWNSCALE = 16
+
+# ---------------------------------------------------------------------------
+# Single-slide processing
+# ---------------------------------------------------------------------------
 
 
-def detect_tissue(scene: Any) -> Tuple[int, np.ndarray]:
-    """Find the sharpest slice and generate a tissue mask for sparse filtering."""
+def read_thumbnail_rgb(scene, width: int, height: int) -> np.ndarray:
+    """Read a small RGB thumbnail from the first z-slice."""
+    d_w = width // config.MASK_DOWNSCALE
+    d_h = height // config.MASK_DOWNSCALE
+    img = scene.read_block(
+        rect=(0, 0, width, height), size=(d_w, d_h), slices=(0, 1)
+    )
+    if img.ndim == 4:
+        img = img[0]
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+def find_best_z_per_patch(scene, candidates, raw_patch_size, patch_size, num_z):
+    """For each candidate patch, read the full z-stack and pick the sharpest slice."""
+    best_zs = np.zeros(len(candidates), dtype=np.int32)
+
+    for i, (x, y) in enumerate(candidates):
+        if i % 100 == 0:
+            print(f"    patch {i}/{len(candidates)}")
+
+        with suppress_stderr():
+            z_stack = scene.read_block(
+                rect=(x, y, raw_patch_size, raw_patch_size),
+                size=(patch_size, patch_size),
+                slices=(0, num_z),
+            )
+        if z_stack.ndim == 3:
+            z_stack = z_stack[np.newaxis]
+
+        scores = [compute_brenner_gradient(z_stack[z]) for z in range(num_z)]
+        best_zs[i] = int(np.argmax(scores))
+        del z_stack
+
+    return best_zs
+
+
+def build_patch_index(candidates, best_zs) -> np.ndarray:
+    """Combine (x, y) candidates with best-z into an (N, 3) int32 array."""
+    coords = np.array(candidates, dtype=np.int32)
+    return np.column_stack([coords, best_zs])
+
+
+def process_slide(slide_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
+    """Full single-slide pipeline: thumbnail → mask → grid → focus → index."""
+    raw_extent = cfg.patch_size * cfg.downsample_factor
+
+    with suppress_stderr():
+        slide = slideio.open_slide(str(slide_path), "VSI")
+    scene = slide.get_scene(0)
     width, height = scene.size
     num_z = scene.num_z_slices
-    d_w, d_h = width // MASK_DOWNSCALE, height // MASK_DOWNSCALE
 
-    print("  [DEBUG] Scanning Z-slices for sharpest thumbnail...")
-    best_score, best_img, best_z = -1.0, None, 0
-    # Sample every 3rd slice to find a good reference image for the mask
-    for z in range(0, num_z, 3):
-        img = scene.read_block(
-            rect=(0, 0, width, height), size=(d_w, d_h), slices=(z, z + 1)
-        )
-        score = compute_brenner_gradient(img)
-        if score > best_score:
-            best_score, best_img, best_z = score, img, z
+    print(f"[{slide_path.name}] tissue mask")
+    thumbnail = read_thumbnail_rgb(scene, width, height)
+    mask = detect_tissue_mask(thumbnail_rgb=thumbnail)
 
-    if best_img is None:
-        return 0, np.zeros((d_h, d_w), dtype=np.uint8)
+    print(f"[{slide_path.name}] grid + tissue filter")
+    grid = generate_grid(width, height, raw_extent, cfg.stride)
+    candidates = filter_by_tissue_coverage(
+        grid, mask, raw_extent,
+        cfg.min_tissue_coverage, mask_downscale=config.MASK_DOWNSCALE,
+    )
 
-    gray = cv2.cvtColor(best_img, cv2.COLOR_BGR2GRAY)
-    thresh = threshold_otsu(gray)
-
-    # Tissue is usually darker than the slide background
-    mask = ((gray <= thresh) * 255).astype(np.uint8)
-
-    # Basic Morphological Opening to remove small noise (dust)
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-
-    return best_z, mask
-
-
-def generate_patch_candidates(
-    mask: np.ndarray,
-    width_raw: int,
-    height_raw: int,
-    patch_size_raw: int,
-    stride_raw: int,
-    min_cov: float,
-) -> List[Tuple[int, int]]:
-    """Return top-left coordinates for grid patches that contain enough tissue."""
-    candidates = []
-    m_h, m_w = mask.shape
-
-    for y in range(0, height_raw - patch_size_raw + 1, stride_raw):
-        for x in range(0, width_raw - patch_size_raw + 1, stride_raw):
-            # Map raw coordinates to mask coordinates
-            mx = int(x / MASK_DOWNSCALE)
-            my = int(y / MASK_DOWNSCALE)
-            mw = int(patch_size_raw / MASK_DOWNSCALE)
-            mh = int(patch_size_raw / MASK_DOWNSCALE)
-
-            # Crop mask region
-            mask_patch = mask[my : my + mh, mx : mx + mw]
-            if mask_patch.size == 0:
-                continue
-
-            coverage = np.mean(mask_patch > 0)
-            if coverage >= min_cov:
-                candidates.append((x, y))
-
-    return candidates
-
-
-class SlidePreprocessor:
-    def __init__(self, config: PreprocessConfig):
-        self.cfg = config
-        self.ds = self.cfg.downsample_factor
-
-    def process(self, slide_path: Path) -> SlideMetadata:
-        with suppress_stderr():
-            slide = slideio.open_slide(str(slide_path), "VSI")
-        scene = slide.get_scene(0)
-        width_raw, height_raw = scene.size
-        num_z = scene.num_z_slices
-
-        print(f"[{slide_path.name}] Stage 1: Tissue Masking...")
-        _, mask = detect_tissue(scene)
-
-        print(f"[{slide_path.name}] Stage 2: Grid Generation...")
-        raw_patch_size = self.cfg.patch_size * self.ds
-        raw_stride = self.cfg.stride * self.ds
-
-        candidates = generate_patch_candidates(
-            mask,
-            width_raw,
-            height_raw,
-            raw_patch_size,
-            raw_stride,
-            self.cfg.min_tissue_coverage,
-        )
-
-        total_patches = len(candidates)
-        print(
-            f"[{slide_path.name}] Stage 3: Focus Search ({total_patches} physical patches)..."
-        )
-
-        if total_patches == 0:
-            return SlideMetadata(
-                name=slide_path.name,
-                width=width_raw,
-                height=height_raw,
-                num_z=num_z,
-                patches=np.array([], dtype=np.int32).reshape(0, 3),
-            )
-
-        best_zs = np.zeros(total_patches, dtype=np.int32)
-
-        # Read each patch as a full Z-stack (S, H, W, C)
-        # This is much faster than reading full slides or large ROIs in Slideio
-        for i, (ox, oy) in enumerate(candidates):
-            if i % 100 == 0:
-                print(f"  [{slide_path.name}] Processing patch {i}/{total_patches}...")
-
-            with suppress_stderr():
-                # Read the full Z-stack for this patch
-                z_stack = scene.read_block(
-                    rect=(ox, oy, raw_patch_size, raw_patch_size),
-                    size=(self.cfg.patch_size, self.cfg.patch_size),
-                    slices=(0, num_z),
-                )
-
-            # Handle slideio behavior: single slice returns 3D, multiple returns 4D
-            if z_stack.ndim == 3:
-                z_stack = np.expand_dims(z_stack, axis=0)
-
-            # Compute Brenner focus metric for each slice in the stack
-            patch_scores = []
-            for z in range(num_z):
-                # compute_brenner_gradient internally handles BGR -> Gray conversion
-                score = compute_brenner_gradient(z_stack[z])
-                patch_scores.append(score)
-
-            best_zs[i] = np.argmax(patch_scores)
-            del z_stack
-
-        # Construct final patch array: [raw_x, raw_y, best_z]
-        c_arr = np.array(candidates)
-        final_patches = np.column_stack([c_arr[:, 0], c_arr[:, 1], best_zs]).astype(
-            np.int32
-        )
-
+    if not candidates:
         return SlideMetadata(
-            name=slide_path.name,
-            width=width_raw,
-            height=height_raw,
-            num_z=num_z,
-            patches=final_patches,
+            name=slide_path.name, num_z=num_z,
+            patches=np.empty((0, 3), dtype=np.int32),
         )
 
+    print(f"[{slide_path.name}] focus search ({len(candidates)} patches)")
+    best_zs = find_best_z_per_patch(
+        scene, candidates, raw_extent, cfg.patch_size, num_z
+    )
 
-def load_master_index(dataset_name: str, patch_size: int) -> MasterIndex | None:
-    manifest_path = config.get_master_index_path(dataset_name, patch_size)
-    indices_dir = config.get_slide_index_dir(dataset_name, patch_size)
+    return SlideMetadata(
+        name=slide_path.name, num_z=num_z,
+        patches=build_patch_index(candidates, best_zs),
+    )
+
+
+def load_master_index(
+    dataset_name: str,
+    stride: int,
+    downsample_factor: int,
+    min_tissue_coverage: float,
+) -> MasterIndex | None:
+    manifest_path = config.get_master_index_path(
+        dataset_name, stride, downsample_factor, min_tissue_coverage
+    )
+    indices_dir = config.get_slide_index_dir(
+        dataset_name, stride, downsample_factor, min_tissue_coverage
+    )
 
     if not manifest_path.exists():
         return None
@@ -196,7 +137,6 @@ def load_master_index(dataset_name: str, patch_size: int) -> MasterIndex | None:
 
         return MasterIndex(
             file_registry=slide_metadatas,
-            patch_size=patch_size,
             config_state=manifest_data["config_state"],
         )
     except Exception as e:
@@ -208,26 +148,21 @@ def save_slide_json(result: SlideMetadata, pkl_path: Path):
     json_path = pkl_path.with_suffix(".json")
     data = {
         "name": result.name,
-        "width": result.width,
-        "height": result.height,
         "num_z": result.num_z,
-        "patch_count": result.patch_count,
         "patches": result.patches.tolist(),
     }
     with open(json_path, "w") as f:
         json.dump(data, f)
 
 
-def save_master_index_json(
-    master_index: MasterIndex, dataset_name: str, patch_size: int
-) -> None:
-    json_path = config.get_master_index_path(dataset_name, patch_size).with_suffix(
-        ".json"
-    )
+def save_master_index_json(master_index: MasterIndex, dataset_name: str) -> None:
+    cfg = master_index.config_state
+    json_path = config.get_master_index_path(
+        dataset_name, cfg.stride, cfg.downsample_factor, cfg.min_tissue_coverage
+    ).with_suffix(".json")
     data = {
         "dataset_name": dataset_name,
-        "patch_size": patch_size,
-        "config": asdict(master_index.config_state),
+        "config": asdict(cfg),
         "slides": [],
     }
 
@@ -235,10 +170,7 @@ def save_master_index_json(
         data["slides"].append(
             {
                 "name": slide.name,
-                "width": slide.width,
-                "height": slide.height,
                 "num_z": slide.num_z,
-                "patch_count": slide.patch_count,
                 "patches": slide.patches.tolist(),
             }
         )
@@ -250,22 +182,26 @@ def save_master_index_json(
 
 def preprocess_dataset(
     dataset_name: str,
-    patch_size: int,
     stride: int,
     downsample_factor: int,
     min_tissue_coverage: float,
     limit: int | None = None,
     workers: int | None = None,
     force: bool = False,
+    exclude: str = config.EXCLUDE_PATTERN,
 ) -> None:
     raw_dir = config.get_vsi_raw_dir(dataset_name)
-    manifest_path = config.get_master_index_path(dataset_name, patch_size)
-    indices_dir = config.get_slide_index_dir(dataset_name, patch_size)
+    manifest_path = config.get_master_index_path(
+        dataset_name, stride, downsample_factor, min_tissue_coverage
+    )
+    indices_dir = config.get_slide_index_dir(
+        dataset_name, stride, downsample_factor, min_tissue_coverage
+    )
 
     workers = workers or os.cpu_count() or 1
 
     current_config = PreprocessConfig(
-        patch_size=patch_size,
+        patch_size=config.PATCH_SIZE,
         stride=stride,
         downsample_factor=downsample_factor,
         min_tissue_coverage=min_tissue_coverage,
@@ -293,12 +229,14 @@ def preprocess_dataset(
                 continue
 
     all_files = sorted(list(raw_dir.glob("*.vsi")))
+    if exclude:
+        all_files = [f for f in all_files if exclude.lower() not in f.name.lower()]
     if limit:
         all_files = all_files[:limit]
 
     files_to_process = [f for f in all_files if f.name not in processed_names]
 
-    print(f"Preprocessing {dataset_name} (Stride={stride}, Patch={patch_size})")
+    print(f"Preprocessing {dataset_name} (Stride={stride}, Patch={config.PATCH_SIZE})")
     print(f"Total: {len(all_files)} | Remaining: {len(files_to_process)}")
 
     if not manifest_path.exists() or force:
@@ -307,7 +245,7 @@ def preprocess_dataset(
 
     if files_to_process:
         with multiprocessing.Pool(workers) as pool:
-            process_func = partial(process_slide_wrapper, config=current_config)
+            process_func = partial(_process_slide_worker, cfg=current_config)
 
             for result in pool.imap_unordered(process_func, files_to_process):
                 if result is not None:
@@ -321,25 +259,23 @@ def preprocess_dataset(
     if existing_results:
         master_index = MasterIndex(
             file_registry=sorted(existing_results, key=lambda x: x.name),
-            patch_size=patch_size,
             config_state=current_config,
         )
         with open(manifest_path, "wb") as f:
             pickle.dump(master_index, f)
-        save_master_index_json(master_index, dataset_name, patch_size)
+        save_master_index_json(master_index, dataset_name)
 
 
-def process_slide_wrapper(slide_path: Path, config: PreprocessConfig):
-    return SlidePreprocessor(config).process(slide_path)
+def _process_slide_worker(slide_path: Path, cfg: PreprocessConfig):
+    return process_slide(slide_path, cfg)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Baseline VSI Preprocessor.")
     parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--patch_size", type=int, default=224)
-    parser.add_argument("--stride", type=int, default=448)
-    parser.add_argument("--downsample_factor", type=int, default=2)
-    parser.add_argument("--min_tissue_coverage", type=float, default=0.05)
+    parser.add_argument("--stride", type=int, default=config.STRIDE)
+    parser.add_argument("--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR)
+    parser.add_argument("--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--force", action="store_true")
@@ -347,7 +283,6 @@ if __name__ == "__main__":
 
     preprocess_dataset(
         args.dataset,
-        args.patch_size,
         args.stride,
         args.downsample_factor,
         args.min_tissue_coverage,

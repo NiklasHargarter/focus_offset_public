@@ -1,6 +1,8 @@
 # Preprocessing Pipeline Optimization & Scaling
 
-This document details the optimizations made to the VSI preprocessing pipeline to handle datasets with millions of patches (e.g., ZStack_HE with 50M+ samples) efficiently and resiliently.
+This document details the optimizations made to the preprocessing pipeline to handle datasets with millions of patches efficiently and resiliently.
+
+The pipeline is structured as shared modules (`src/dataset/prep/`) consumed by format-specific scripts (`vsi_prep/`, `ome_prep/`). See `docs/vsi_preprocessing.md` for the step-by-step flow.
 
 ## 1. Atomic Per-Slide Indexing (Resiliency & Efficiency)
 We benchmarked the scalability of the metadata structure. For the current `ZStack_HE` dataset (~2 Million patches), the final master index is only **~50 MB**. While this size is easily handled by modern systems, the "monolithic" approach had significant workflow drawbacks:

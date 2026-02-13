@@ -1,43 +1,49 @@
-import lightning as L
-from torch.utils.data import DataLoader
-import torch
-
 import json
 import random
-from typing import Optional
+
+import albumentations as A
+import lightning as L
+import numpy as np
+import torch
+from albumentations.pytorch import ToTensorV2
+from torch.utils.data import DataLoader
 
 from src import config
 from src.dataset.vsi_dataset_lightning import VSIDatasetLightning
-from src.dataset.vsi_types import MasterIndex, ProcessedIndex
-import numpy as np
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 from src.dataset.vsi_prep.preprocess import load_master_index
+from src.dataset.vsi_types import MasterIndex, ProcessedIndex
 
 
 class BaseVSIDataModule(L.LightningDataModule):
-    """
-    Shared base class for VSI DataModules.
-    Preprocessing params (patch_size, stride, etc.) are read from the master index
-    — only runtime params are configurable here.
+    """Shared base for all VSI DataModules.
+
+    Preprocessing settings (stride, downsample, coverage) locate the correct
+    cache directory.  Runtime settings (batch_size, workers) control the
+    DataLoaders.
     """
 
     def __init__(
         self,
-        dataset_name: str = "ZStack_HE",
-        batch_size: int = 32,
-        num_workers: int = 4,
-        prefetch_factor: int = 4,
+        dataset_name: str = config.DATASET_NAME,
+        stride: int = config.STRIDE,
+        downsample_factor: int = config.DOWNSAMPLE_FACTOR,
+        min_tissue_coverage: float = config.MIN_TISSUE_COVERAGE,
+        batch_size: int = config.BATCH_SIZE,
+        num_workers: int = config.NUM_WORKERS,
+        prefetch_factor: int = config.PREFETCH_FACTOR,
     ):
         super().__init__()
         self.dataset_name = dataset_name
+        self.stride = stride
+        self.downsample_factor = downsample_factor
+        self.min_tissue_coverage = min_tissue_coverage
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
 
-        self.train_dataset: Optional[torch.utils.data.Dataset] = None
-        self.val_dataset: Optional[torch.utils.data.Dataset] = None
-        self.test_dataset: Optional[torch.utils.data.Dataset] = None
+        self.train_dataset: torch.utils.data.Dataset | None = None
+        self.val_dataset: torch.utils.data.Dataset | None = None
+        self.test_dataset: torch.utils.data.Dataset | None = None
 
     @property
     def train_transform(self):
@@ -56,8 +62,8 @@ class BaseVSIDataModule(L.LightningDataModule):
                     ],
                     p=1.0,
                 ),
-                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                ToTensorV2(),
+                A.ToFloat(max_value=255.0),  # uint8 → float32 [0, 1]
+                ToTensorV2(),  # HWC → CHW (stain-agnostic)
             ]
         )
 
@@ -65,8 +71,8 @@ class BaseVSIDataModule(L.LightningDataModule):
     def val_transform(self):
         return A.Compose(
             [
-                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                ToTensorV2(),
+                A.ToFloat(max_value=255.0),  # uint8 → float32 [0, 1]
+                ToTensorV2(),  # HWC → CHW (stain-agnostic)
             ]
         )
 
@@ -75,7 +81,9 @@ class BaseVSIDataModule(L.LightningDataModule):
         Quick check that preprocessed data exists for this dataset.
         All preprocessing params are baked into the master index at preprocess time.
         """
-        master_index = load_master_index(self.dataset_name, config.PATCH_SIZE)
+        master_index = load_master_index(
+            self.dataset_name, self.stride, self.downsample_factor, self.min_tissue_coverage
+        )
 
         if master_index is None:
             print(
@@ -88,7 +96,9 @@ class BaseVSIDataModule(L.LightningDataModule):
             )
 
         # Check slide indices exist
-        indices_dir = config.get_slide_index_dir(self.dataset_name, config.PATCH_SIZE)
+        indices_dir = config.get_slide_index_dir(
+            self.dataset_name, self.stride, self.downsample_factor, self.min_tissue_coverage
+        )
         if not any(indices_dir.glob("*.pkl")):
             raise RuntimeError(
                 f"No individual slide indices found in {indices_dir}. "
@@ -128,13 +138,15 @@ class BaseVSIDataModule(L.LightningDataModule):
         return ProcessedIndex(
             file_registry=filtered_registry,
             cumulative_indices=cumulative_indices,
-            patch_size=master_index.patch_size,
+            patch_size=config.PATCH_SIZE,
             downsample_factor=master_index.config_state.downsample_factor,
             dataset_name=self.dataset_name,
         )
 
     def _load_data_indices(self) -> tuple[MasterIndex, dict]:
-        master_index = load_master_index(self.dataset_name, config.PATCH_SIZE)
+        master_index = load_master_index(
+            self.dataset_name, self.stride, self.downsample_factor, self.min_tissue_coverage
+        )
         split_path = config.get_split_path(self.dataset_name)
 
         if master_index is None or not split_path.exists():
@@ -157,6 +169,7 @@ class BaseVSIDataModule(L.LightningDataModule):
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
+            drop_last=True,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
             pin_memory=torch.cuda.is_available(),
@@ -169,7 +182,7 @@ class BaseVSIDataModule(L.LightningDataModule):
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
-            shuffle=True,  # Spread WSI workers across slides
+            shuffle=False,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
             pin_memory=torch.cuda.is_available(),
@@ -198,12 +211,12 @@ class HEHoldOutDataModule(BaseVSIDataModule):
 
     def __init__(self, val_ratio: float = 0.1, seed: int = 42, **kwargs):
         if "dataset_name" not in kwargs:
-            kwargs["dataset_name"] = "ZStack_HE"
+            kwargs["dataset_name"] = config.DATASET_NAME
         super().__init__(**kwargs)
         self.val_ratio = val_ratio
         self.seed = seed
 
-    def setup(self, stage: Optional[str] = None):
+    def setup(self, stage: str | None = None):
         master_index, splits = self._load_data_indices()
 
         if stage == "fit" or stage is None:
@@ -242,13 +255,13 @@ class HEFoldDataModule(BaseVSIDataModule):
 
     def __init__(self, fold_idx: int = 0, num_folds: int = 5, seed: int = 42, **kwargs):
         if "dataset_name" not in kwargs:
-            kwargs["dataset_name"] = "ZStack_HE"
+            kwargs["dataset_name"] = config.DATASET_NAME
         super().__init__(**kwargs)
         self.fold_idx = fold_idx
         self.num_folds = num_folds
         self.seed = seed
 
-    def setup(self, stage: Optional[str] = None):
+    def setup(self, stage: str | None = None):
         master_index, splits = self._load_data_indices()
 
         if stage == "fit" or stage is None:
@@ -302,7 +315,7 @@ class IHCDataModule(BaseVSIDataModule):
             kwargs["dataset_name"] = "ZStack_IHC"
         super().__init__(**kwargs)
 
-    def setup(self, stage: Optional[str] = None):
+    def setup(self, stage: str | None = None):
         master_index, splits = self._load_data_indices()
 
         if stage == "fit":

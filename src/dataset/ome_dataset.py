@@ -1,14 +1,16 @@
-import torch
-from torch.utils.data import Dataset
 import bisect
 import os
-import tifffile
-import numpy as np
-import cv2
-from typing import Optional, Callable, Any
+from collections.abc import Callable
 from pathlib import Path
-from src import config
+from typing import Any
 
+import cv2
+import numpy as np
+import tifffile
+import torch
+from torch.utils.data import Dataset
+
+from src import config
 from src.dataset.vsi_types import ProcessedIndex, SlideMetadata
 
 
@@ -21,7 +23,7 @@ class OMEDataset(Dataset):
     def __init__(
         self,
         index_data: ProcessedIndex,
-        transform: Optional[Callable[[Any], torch.Tensor]] = None,
+        transform: Callable[[Any], torch.Tensor] | None = None,
         z_res_microns: float = 1.0,  # Default fallback if metadata is missing
     ):
         self.index = index_data
@@ -66,7 +68,7 @@ class OMEDataset(Dataset):
     def __len__(self) -> int:
         return self.total_samples
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, dict]:
+    def __getitem__(self, idx: int) -> dict[str, Any]:
         file_idx = bisect.bisect_right(self.cumulative_indices, idx)
         if file_idx == 0:
             local_idx = idx
@@ -92,18 +94,11 @@ class OMEDataset(Dataset):
         # In multi-series OME-TIFF, series corresponds to Z
         series = reader.series[z_level]
 
-        # Determine crop in raw coordinates
-        raw_w = int(self.patch_size * self.downsample_factor)
-        raw_h = int(self.patch_size * self.downsample_factor)
-
-        # tifffile series asarray might be slow for full images if they are huge,
-        # but for 2k x 2k it's fine. For larger WSIs, we'd need a more efficient way.
-        # Note: tifffile doesn't have a direct "read ROI" for all formats without loading full page.
-        # However, for typical OME-TIFFs it should use memory mapping.
+        # Crop raw patch, then resize to ViT output resolution
+        raw_extent = self.patch_size * self.downsample_factor
         try:
             full_plane = series.asarray()
-            # Crop
-            block = full_plane[int(y) : int(y + raw_h), int(x) : int(x + raw_w)]
+            block = full_plane[int(y) : int(y + raw_extent), int(x) : int(x + raw_extent)]
 
             # Grayscale to RGB if needed
             if block.ndim == 2:
@@ -111,7 +106,7 @@ class OMEDataset(Dataset):
             elif block.shape[-1] == 1:
                 block = np.concatenate([block] * 3, axis=-1)
 
-            # Resize to patch_size
+            # Resize to patch_size (identity when ds=1)
             if block.shape[0] != self.patch_size or block.shape[1] != self.patch_size:
                 block = cv2.resize(block, (self.patch_size, self.patch_size))
 
@@ -128,8 +123,12 @@ class OMEDataset(Dataset):
                 "optimal_z": int(best_z),
             }
 
-            return image, torch.tensor(z_offset, dtype=torch.float32), metadata
+            return {
+                "image": image,
+                "target": torch.tensor(z_offset, dtype=torch.float32),
+                "metadata": metadata,
+            }
 
         except Exception as e:
             print(f"Error reading {img_name} at ({x}, {y}) z={z_level}: {e}")
-            raise e
+            raise
