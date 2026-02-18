@@ -8,9 +8,11 @@ import cv2
 import lightning as L
 import torch
 from albumentations.pytorch import ToTensorV2
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 from src import config
+
+from torch.utils.data import Dataset
 
 LINKS = {
     "Data_channel.zip": "https://ndownloader.figshare.com/files/10616965",
@@ -53,11 +55,7 @@ class Jiang2018Dataset(Dataset):
         return {
             "image": image,
             "target": torch.tensor(offset, dtype=torch.float32),
-            "metadata": {
-                "z_level": 0,
-                "optimal_z": 0,
-                "slide_id": "jiang2018",
-            },
+            "metadata": {"filename": path.name},
         }
 
 
@@ -80,7 +78,8 @@ class Jiang2018DataModule(L.LightningDataModule):
     def val_transform(self):
         return A.Compose(
             [
-                ToTensorV2(),  # HWC uint8 → CHW float32 [0, 1] (stain-agnostic)
+                A.ToFloat(max_value=255.0),
+                ToTensorV2(),  # HWC → CHW
             ]
         )
 

@@ -69,9 +69,7 @@ def find_best_z_per_patch(reader, candidates, raw_patch_size, patch_size, num_z)
             rect=(x, y, raw_patch_size, raw_patch_size), slices=(0, num_z)
         )
         scores = [
-            compute_brenner_gradient(
-                cv2.resize(z_stack[z], (patch_size, patch_size))
-            )
+            compute_brenner_gradient(cv2.resize(z_stack[z], (patch_size, patch_size)))
             for z in range(num_z)
         ]
         best_zs[i] = int(np.argmax(scores))
@@ -100,14 +98,18 @@ def process_image(img_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
     print(f"[{img_path.name}] grid + tissue filter")
     grid = generate_grid(width, height, raw_extent, cfg.stride)
     candidates = filter_by_tissue_coverage(
-        grid, mask, raw_extent,
-        cfg.min_tissue_coverage, mask_downscale=config.MASK_DOWNSCALE,
+        grid,
+        mask,
+        raw_extent,
+        cfg.min_tissue_coverage,
+        mask_downscale=config.MASK_DOWNSCALE,
     )
 
     if not candidates:
         reader.close()
         return SlideMetadata(
-            name=img_path.name, num_z=num_z,
+            name=img_path.name,
+            num_z=num_z,
             patches=np.empty((0, 3), dtype=np.int32),
         )
 
@@ -118,7 +120,8 @@ def process_image(img_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
     reader.close()
 
     return SlideMetadata(
-        name=img_path.name, num_z=num_z,
+        name=img_path.name,
+        num_z=num_z,
         patches=build_patch_index(candidates, best_zs),
     )
 

@@ -18,7 +18,9 @@ class RGBModel(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.model = timm.create_model("resnet18", pretrained=False, num_classes=1, in_chans=3)
+        self.model = timm.create_model(
+            "resnet18", pretrained=False, num_classes=1, in_chans=3
+        )
 
     def forward(self, x):
         return self.model(x)
@@ -30,7 +32,9 @@ class FFTModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.norm = nn.InstanceNorm2d(1, affine=True)
-        self.model = timm.create_model("resnet18", pretrained=False, num_classes=1, in_chans=1)
+        self.model = timm.create_model(
+            "resnet18", pretrained=False, num_classes=1, in_chans=1
+        )
 
     def forward(self, x):
         gray = x.mean(dim=1, keepdim=True)
@@ -46,14 +50,18 @@ class DWTModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.norm = nn.InstanceNorm2d(3, affine=True)
-        self.model = timm.create_model("resnet18", pretrained=False, num_classes=1, in_chans=3)
+        self.model = timm.create_model(
+            "resnet18", pretrained=False, num_classes=1, in_chans=3
+        )
 
     def forward(self, x):
         gray = x.mean(dim=1, keepdim=True)
         target_size = x.shape[-2:]
         _, (LH, HL, HH) = ptwt.wavedec2(gray, wavelet="haar", level=1)
         dwt_details = torch.cat([LH, HL, HH], dim=1)
-        dwt_up = F.interpolate(dwt_details, size=target_size, mode="bilinear", align_corners=False)
+        dwt_up = F.interpolate(
+            dwt_details, size=target_size, mode="bilinear", align_corners=False
+        )
         return self.model(self.norm(dwt_up))
 
 
@@ -64,7 +72,9 @@ class MultimodalModel(nn.Module):
         super().__init__()
         self.fft_norm = nn.InstanceNorm2d(1, affine=True)
         self.dwt_norm = nn.InstanceNorm2d(3, affine=True)
-        self.model = timm.create_model("resnet18", pretrained=False, num_classes=1, in_chans=7)
+        self.model = timm.create_model(
+            "resnet18", pretrained=False, num_classes=1, in_chans=7
+        )
 
     def forward(self, x):
         gray = x.mean(dim=1, keepdim=True)
@@ -78,7 +88,9 @@ class MultimodalModel(nn.Module):
         # DWT branch
         _, (LH, HL, HH) = ptwt.wavedec2(gray, wavelet="haar", level=1)
         dwt_details = torch.cat([LH, HL, HH], dim=1)
-        dwt_up = F.interpolate(dwt_details, size=target_size, mode="bilinear", align_corners=False)
+        dwt_up = F.interpolate(
+            dwt_details, size=target_size, mode="bilinear", align_corners=False
+        )
 
         features = torch.cat([x, self.fft_norm(fft_mag), self.dwt_norm(dwt_up)], dim=1)
         return self.model(features)

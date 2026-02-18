@@ -1,4 +1,3 @@
-import bisect
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -8,13 +7,16 @@ import cv2
 import numpy as np
 import tifffile
 import torch
-from torch.utils.data import Dataset
 
 from src import config
-from src.dataset.vsi_types import ProcessedIndex, SlideMetadata
+from src.dataset.base_dataset import BasePatchDataset
+from src.dataset.vsi_types import ProcessedIndex
 
 
-class OMEDataset(Dataset):
+from src.dataset.base_dataset import BaseGridDataset
+
+
+class OMEDataset(BaseGridDataset):
     """
     Worker-safe Dataset for OME-TIFF patches.
     Uses tifffile for reading multi-series Z-stacks.
@@ -26,13 +28,10 @@ class OMEDataset(Dataset):
         transform: Callable[[Any], torch.Tensor] | None = None,
         z_res_microns: float = 1.0,  # Default fallback if metadata is missing
     ):
-        self.index = index_data
+        super().__init__(index_data)
         self.transform = transform
         self.z_res_microns = z_res_microns
 
-        self.file_registry = self.index.file_registry
-        self.cumulative_indices = self.index.cumulative_indices
-        self.total_samples = self.index.total_samples
         self.patch_size = self.index.patch_size
         self.downsample_factor = self.index.downsample_factor
         self.dataset_name = self.index.dataset_name
@@ -65,24 +64,12 @@ class OMEDataset(Dataset):
 
         return self._readers[img_path_str]
 
-    def __len__(self) -> int:
-        return self.total_samples
+    def _get_sample(self, idx: int) -> dict[str, Any]:
+        file_meta, _, patch_info, z_level = self._get_grid_info(idx)
 
-    def __getitem__(self, idx: int) -> dict[str, Any]:
-        file_idx = bisect.bisect_right(self.cumulative_indices, idx)
-        if file_idx == 0:
-            local_idx = idx
-        else:
-            local_idx = idx - self.cumulative_indices[file_idx - 1]
-
-        file_meta: SlideMetadata = self.file_registry[file_idx]
         img_name = file_meta.name
         num_z = file_meta.num_z
-
-        patch_idx = local_idx // num_z
-        z_level = local_idx % num_z
-
-        x, y, best_z = file_meta.patches[patch_idx]
+        x, y, best_z = patch_info
 
         reader = self._get_reader(img_name)
 
@@ -98,7 +85,9 @@ class OMEDataset(Dataset):
         raw_extent = self.patch_size * self.downsample_factor
         try:
             full_plane = series.asarray()
-            block = full_plane[int(y) : int(y + raw_extent), int(x) : int(x + raw_extent)]
+            block = full_plane[
+                int(y) : int(y + raw_extent), int(x) : int(x + raw_extent)
+            ]
 
             # Grayscale to RGB if needed
             if block.ndim == 2:
@@ -115,13 +104,14 @@ class OMEDataset(Dataset):
             else:
                 image = torch.from_numpy(block).permute(2, 0, 1).float() / 255.0
 
-            metadata = {
-                "filename": img_name,
-                "x": int(x),
-                "y": int(y),
-                "z_level": int(z_level),
-                "optimal_z": int(best_z),
-            }
+            metadata = BasePatchDataset.create_metadata(
+                filename=img_name,
+                x=int(x),
+                y=int(y),
+                z_level=int(z_level),
+                optimal_z=int(best_z),
+                num_z=num_z,
+            )
 
             return {
                 "image": image,

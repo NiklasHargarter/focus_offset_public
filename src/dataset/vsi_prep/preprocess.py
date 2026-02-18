@@ -28,9 +28,7 @@ def read_thumbnail_rgb(scene, width: int, height: int) -> np.ndarray:
     """Read a small RGB thumbnail from the first z-slice."""
     d_w = width // config.MASK_DOWNSCALE
     d_h = height // config.MASK_DOWNSCALE
-    img = scene.read_block(
-        rect=(0, 0, width, height), size=(d_w, d_h), slices=(0, 1)
-    )
+    img = scene.read_block(rect=(0, 0, width, height), size=(d_w, d_h), slices=(0, 1))
     if img.ndim == 4:
         img = img[0]
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -83,13 +81,17 @@ def process_slide(slide_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
     print(f"[{slide_path.name}] grid + tissue filter")
     grid = generate_grid(width, height, raw_extent, cfg.stride)
     candidates = filter_by_tissue_coverage(
-        grid, mask, raw_extent,
-        cfg.min_tissue_coverage, mask_downscale=config.MASK_DOWNSCALE,
+        grid,
+        mask,
+        raw_extent,
+        cfg.min_tissue_coverage,
+        mask_downscale=config.MASK_DOWNSCALE,
     )
 
     if not candidates:
         return SlideMetadata(
-            name=slide_path.name, num_z=num_z,
+            name=slide_path.name,
+            num_z=num_z,
             patches=np.empty((0, 3), dtype=np.int32),
         )
 
@@ -99,7 +101,8 @@ def process_slide(slide_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
     )
 
     return SlideMetadata(
-        name=slide_path.name, num_z=num_z,
+        name=slide_path.name,
+        num_z=num_z,
         patches=build_patch_index(candidates, best_zs),
     )
 
@@ -274,8 +277,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Baseline VSI Preprocessor.")
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--stride", type=int, default=config.STRIDE)
-    parser.add_argument("--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR)
-    parser.add_argument("--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE)
+    parser.add_argument(
+        "--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR
+    )
+    parser.add_argument(
+        "--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE
+    )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--force", action="store_true")

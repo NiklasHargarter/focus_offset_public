@@ -34,7 +34,6 @@ class FocusOffsetRegressor(L.LightningModule):
         self.backbone = MODEL_REGISTRY[model_name]()
         self.criterion = nn.HuberLoss(delta=1.0)
 
-        # Metrics
         self.val_mae = MeanAbsoluteError()
         self.test_mae = MeanAbsoluteError()
 
@@ -90,7 +89,9 @@ class FocusOffsetRegressor(L.LightningModule):
         loss, preds, targets, images = self._common_eval_step(batch)
 
         self.test_mae(preds, targets.unsqueeze(1))
-        self.log("test_loss", loss, on_step=False, on_epoch=True, batch_size=images.size(0))
+        self.log(
+            "test_loss", loss, on_step=False, on_epoch=True, batch_size=images.size(0)
+        )
         self.log(
             "test_mae",
             self.test_mae,
@@ -102,9 +103,17 @@ class FocusOffsetRegressor(L.LightningModule):
         return loss
 
     def predict_step(self, batch, batch_idx):
-        """Return raw predictions only. Eval scripts pair these with batch data."""
+        """Return predictions, targets, and metadata for evaluation.
+
+        Returning everything from a single forward pass avoids re-iterating
+        the dataloader in eval scripts, keeping predictions and metadata
+        perfectly aligned.
+        """
         _loss, preds, _targets, _images = self._common_eval_step(batch)
-        return preds
+        result = {"pred": preds, "target": batch["target"]}
+        if "metadata" in batch:
+            result["metadata"] = batch["metadata"]
+        return result
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

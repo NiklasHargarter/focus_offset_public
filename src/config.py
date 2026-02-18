@@ -6,15 +6,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # Data Root: Defaults to Home, but can be overridden via environment variable
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", Path.home()))
 
-# ---------------------------------------------------------------------------
-# Directory Constants
-# ---------------------------------------------------------------------------
+
 CACHE_DIR = PROJECT_ROOT / "cache"
 DATASET_NAME = "ZStack_HE"  # Default fallback
 
-# ---------------------------------------------------------------------------
-# Preprocessing Defaults
-# ---------------------------------------------------------------------------
+
 PATCH_SIZE = 224  # Fixed for ViT — not configurable
 STRIDE = 448
 DOWNSAMPLE_FACTOR = 1
@@ -22,9 +18,7 @@ MIN_TISSUE_COVERAGE = 0.05
 MASK_DOWNSCALE = 8
 EXCLUDE_PATTERN = "_all_"  # Skip slides whose name contains this substring
 
-# ---------------------------------------------------------------------------
-# Training Defaults
-# ---------------------------------------------------------------------------
+
 BATCH_SIZE = 512
 NUM_WORKERS = 24
 PREFETCH_FACTOR = 1
@@ -72,7 +66,10 @@ def get_master_index_path(
     min_tissue_coverage: float,
 ) -> Path:
     """Path to the master manifest file for a dataset run."""
-    path = _run_dir(dataset_name, stride, downsample_factor, min_tissue_coverage) / "manifest.pkl"
+    path = (
+        _run_dir(dataset_name, stride, downsample_factor, min_tissue_coverage)
+        / "manifest.pkl"
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -84,6 +81,9 @@ def get_slide_index_dir(
     min_tissue_coverage: float,
 ) -> Path:
     """Directory for individual slide metadata pickles."""
-    path = _run_dir(dataset_name, stride, downsample_factor, min_tissue_coverage) / "indices"
+    path = (
+        _run_dir(dataset_name, stride, downsample_factor, min_tissue_coverage)
+        / "indices"
+    )
     path.mkdir(parents=True, exist_ok=True)
     return path

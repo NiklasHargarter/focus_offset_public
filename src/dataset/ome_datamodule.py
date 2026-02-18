@@ -37,14 +37,15 @@ class AgNorDataModule(BaseVSIDataModule):
 
     def setup(self, stage: str | None = None):
         master_index = load_master_index(
-            self.dataset_name, self.stride, self.downsample_factor, self.min_tissue_coverage
+            self.dataset_name,
+            self.stride,
+            self.downsample_factor,
+            self.min_tissue_coverage,
         )
         split_path = config.get_split_path(self.dataset_name)
 
         if not split_path.exists():
-            print(
-                f"Warning: Split file {split_path} missing. Using all data for test."
-            )
+            print(f"Warning: Split file {split_path} missing. Using all data for test.")
             splits = {
                 "train_pool": [],
                 "test": [s.name for s in master_index.file_registry],

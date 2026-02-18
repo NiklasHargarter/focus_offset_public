@@ -82,7 +82,10 @@ class BaseVSIDataModule(L.LightningDataModule):
         All preprocessing params are baked into the master index at preprocess time.
         """
         master_index = load_master_index(
-            self.dataset_name, self.stride, self.downsample_factor, self.min_tissue_coverage
+            self.dataset_name,
+            self.stride,
+            self.downsample_factor,
+            self.min_tissue_coverage,
         )
 
         if master_index is None:
@@ -97,7 +100,10 @@ class BaseVSIDataModule(L.LightningDataModule):
 
         # Check slide indices exist
         indices_dir = config.get_slide_index_dir(
-            self.dataset_name, self.stride, self.downsample_factor, self.min_tissue_coverage
+            self.dataset_name,
+            self.stride,
+            self.downsample_factor,
+            self.min_tissue_coverage,
         )
         if not any(indices_dir.glob("*.pkl")):
             raise RuntimeError(
@@ -145,7 +151,10 @@ class BaseVSIDataModule(L.LightningDataModule):
 
     def _load_data_indices(self) -> tuple[MasterIndex, dict]:
         master_index = load_master_index(
-            self.dataset_name, self.stride, self.downsample_factor, self.min_tissue_coverage
+            self.dataset_name,
+            self.stride,
+            self.downsample_factor,
+            self.min_tissue_coverage,
         )
         split_path = config.get_split_path(self.dataset_name)
 

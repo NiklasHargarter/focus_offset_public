@@ -8,7 +8,8 @@ import argparse
 from src import config
 from src.dataset.vsi_datamodule import HEFoldDataModule
 from src.models.lightning_module import FocusOffsetRegressor
-from src.train import setup_environment, train_one
+from src.training import train_one
+from src.utils.env import setup_environment
 
 
 def main():

@@ -95,8 +95,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
     parser.add_argument("--stride", type=int, default=config.STRIDE)
-    parser.add_argument("--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR)
-    parser.add_argument("--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE)
+    parser.add_argument(
+        "--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR
+    )
+    parser.add_argument(
+        "--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--split_ratio", type=float, default=0.3)
     parser.add_argument("--force", action="store_true")

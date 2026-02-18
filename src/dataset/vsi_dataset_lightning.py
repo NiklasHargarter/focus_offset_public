@@ -1,4 +1,3 @@
-import bisect
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -6,16 +5,19 @@ from typing import Any
 
 import slideio
 import torch
-from torch.utils.data import Dataset
 
 from src import config
-from src.dataset.vsi_types import ProcessedIndex, SlideMetadata
+from src.dataset.base_dataset import BasePatchDataset
+from src.dataset.vsi_types import ProcessedIndex
 from src.utils.io_utils import suppress_stderr
 
 
-class VSIDatasetLightning(Dataset):
+from src.dataset.base_dataset import BaseGridDataset
+
+
+class VSIDatasetLightning(BaseGridDataset):
     """
-    State-of-the-art Dataset for VSI patches.
+    Dataset for VSI patches.
     Uses worker-safe lazy initialization with PID tracking to ensure slide handles
     are never shared across processes.
     """
@@ -25,12 +27,9 @@ class VSIDatasetLightning(Dataset):
         index_data: ProcessedIndex,
         transform: Callable[[Any], torch.Tensor] | None = None,
     ):
-        self.index = index_data
+        super().__init__(index_data)
         self.transform = transform
 
-        self.file_registry = self.index.file_registry
-        self.cumulative_indices = self.index.cumulative_indices
-        self.total_samples = self.index.total_samples
         self.patch_size = self.index.patch_size
         self.downsample_factor = self.index.downsample_factor
         self.dataset_name = self.index.dataset_name
@@ -73,32 +72,16 @@ class VSIDatasetLightning(Dataset):
 
         return self._slides[vsi_path][1]
 
-    def __len__(self) -> int:
-        return self.total_samples
-
-    def __getitem__(self, idx: int) -> dict[str, Any]:
+    def _get_sample(self, idx: int) -> dict[str, Any]:
         """
         Maps a global linear index to a specific (Slide, Patch, Z-slice) triplet.
         Calculates the focus offset in microns relative to the precomputed 'sharpest' Z.
         """
-        # Find which slide this index belongs to using binary search on cumulative counts
-        file_idx = bisect.bisect_right(self.cumulative_indices, idx)
+        file_meta, _, patch_info, z_level = self._get_grid_info(idx)
 
-        if file_idx == 0:
-            local_idx = idx
-        else:
-            local_idx = idx - self.cumulative_indices[file_idx - 1]
-
-        file_meta: SlideMetadata = self.file_registry[file_idx]
         vsi_name = file_meta.name
         num_z = file_meta.num_z
-
-        # Within the slide, find the patch and the specific Z-slice
-        patch_idx = local_idx // num_z
-        z_level = local_idx % num_z
-
-        # patches shape: (N, 3) -> [x, y, best_z]
-        x, y, best_z = file_meta.patches[patch_idx]
+        x, y, best_z = patch_info
 
         scene = self._get_scene(vsi_name)
 
@@ -133,13 +116,14 @@ class VSIDatasetLightning(Dataset):
             else:
                 image = torch.from_numpy(block).permute(2, 0, 1).float() / 255.0
 
-            metadata = {
-                "filename": vsi_name,
-                "x": int(x),
-                "y": int(y),
-                "z_level": z_level,
-                "optimal_z": int(best_z),
-            }
+            metadata = BasePatchDataset.create_metadata(
+                filename=vsi_name,
+                x=int(x),
+                y=int(y),
+                z_level=z_level,
+                optimal_z=int(best_z),
+                num_z=num_z,
+            )
 
             return {
                 "image": image,

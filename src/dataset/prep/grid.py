@@ -46,10 +46,7 @@ def filter_by_tissue_coverage(
             continue
 
         tissue_sum = (
-            integral[y1, x1]
-            - integral[my, x1]
-            - integral[y1, mx]
-            + integral[my, mx]
+            integral[y1, x1] - integral[my, x1] - integral[y1, mx] + integral[my, mx]
         )
         area = (y1 - my) * (x1 - mx)
         if tissue_sum / area >= min_coverage:

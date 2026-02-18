@@ -1,7 +1,7 @@
 """
 Train all ablation variants sequentially (ResNet-18 from scratch).
 Each variant uses a different input domain (RGB, FFT, DWT, Multimodal).
-The production ConvNeXt model is trained separately via train_ensemble.py.
+The production ConvNeXt model is trained separately via train_kfold.py.
 """
 
 import argparse
@@ -9,7 +9,8 @@ import argparse
 from src import config
 from src.dataset.vsi_datamodule import VSIDataModule
 from src.models.lightning_module import FocusOffsetRegressor
-from src.train import setup_environment, train_one
+from src.training import train_one
+from src.utils.env import setup_environment
 
 # Only the fair-comparison ablation models (all ResNet-18, from scratch)
 ABLATION_VARIANTS = ["rgb", "fft", "dwt", "multimodal"]
