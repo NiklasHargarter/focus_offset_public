@@ -95,7 +95,22 @@ def download_dataset(
     zip_dir.mkdir(parents=True, exist_ok=True)
     raw_dir.mkdir(parents=True, exist_ok=True)
 
+    import json
+
     print(f"Total images in dataset: {len(all_images)}")
+
+    # Filter against splits if they exist
+    split_path = config.get_split_path(dataset_name)
+    if split_path.exists():
+        print(f"Loading splits from {split_path} to filter downloads...")
+        with open(split_path, "r") as f:
+            splits = json.load(f)
+
+        allowed_files = set(splits.get("test", []) + splits.get("train_pool", []))
+        if allowed_files:
+            before_count = len(all_images)
+            all_images = [img for img in all_images if img["name"] in allowed_files]
+            print(f"Filtered via splits: {before_count} -> {len(all_images)} slides.")
 
     if exclude:
         print(f"Excluding images containing: '{exclude}' (case-insensitive)")
