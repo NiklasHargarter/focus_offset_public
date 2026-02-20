@@ -3,9 +3,8 @@
 import argparse
 
 from src import config
-from src.dataset.vsi_datamodule import VSIDataModule
+from src.dataset.loader import get_holdout_dataloaders
 from src.models.architectures import MODEL_REGISTRY
-from src.models.lightning_module import FocusOffsetRegressor
 from src.training import train_one
 from src.utils.env import setup_environment
 
@@ -32,23 +31,22 @@ def main():
 
     setup_environment()
 
-    datamodule = VSIDataModule(
+    train_loader, val_loader = get_holdout_dataloaders(
         batch_size=args.batch_size,
     )
 
-    model = FocusOffsetRegressor(
-        model_name=args.model,
-        learning_rate=args.learning_rate,
-        weight_decay=config.WEIGHT_DECAY,
-    )
+    model = MODEL_REGISTRY[args.model]()
 
     train_one(
-        datamodule,
         model,
+        train_loader,
+        val_loader,
         log_name=args.model,
         max_epochs=args.max_epochs,
         patience=args.patience,
         dry_run=args.dry_run,
+        learning_rate=args.learning_rate,
+        weight_decay=config.WEIGHT_DECAY,
     )
 
 

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import cv2
-from src.dataset.jiang2018 import Jiang2018DataModule
+from src.dataset.jiang2018 import Jiang2018Dataset
 
 
 def denormalize(tensor):
@@ -45,20 +45,23 @@ def main():
     print("Script started.")
     sns.set_theme(style="white")
 
-    print("Setting up DataModule with num_workers=0...")
-    dm = Jiang2018DataModule(batch_size=8, num_workers=0)
-    dm.setup()
-    print("DataModule setup complete.")
+    print("Loading datasets...")
+    from src import config
+    import albumentations as A
+    from albumentations.pytorch import ToTensorV2
 
-    # Test Same dataset
-    test_ds = dm.test_same_ds
+    raw_dir = config.get_vsi_raw_dir("Jiang2018") / "incoherent_RGBchannels"
+    val_transform = A.Compose([A.ToFloat(max_value=255.0), ToTensorV2()])
+
+    train_ds = Jiang2018Dataset(raw_dir, split="train", transform=val_transform)
+    test_ds = Jiang2018Dataset(raw_dir, split="test_same", transform=val_transform)
     print(f"Test Same dataset loaded. {len(test_ds)} samples.")
 
     # Randomly select a few samples from Test Same
     n_samples = 12
     print(f"Selecting {n_samples} random samples...")
     test_indices = np.random.choice(len(test_ds), n_samples, replace=False)
-    train_indices = np.random.choice(len(dm.train_ds), n_samples, replace=False)
+    train_indices = np.random.choice(len(train_ds), n_samples, replace=False)
 
     # Sort indices by defocus distance for easier comparison
     print("Sorting samples by defocus distance...")
@@ -67,7 +70,7 @@ def main():
         return dataset[idx]["metadata"]["defocus_nm"]
 
     test_indices = sorted(test_indices, key=lambda idx: get_defocus(test_ds, idx))
-    train_indices = sorted(train_indices, key=lambda idx: get_defocus(dm.train_ds, idx))
+    train_indices = sorted(train_indices, key=lambda idx: get_defocus(train_ds, idx))
 
     print(f"Selected indices (sorted): Test={test_indices}, Train={train_indices}")
 
@@ -84,7 +87,7 @@ def main():
     # Row 1: Train
     for i, idx in enumerate(train_indices):
         print(f"  Plotting Train sample {i + 1}/{n_samples} (idx={idx})...")
-        sample = dm.train_ds[idx]
+        sample = train_ds[idx]
         img = denormalize(sample["image"])
         ax = axes[0, i]
         ax.imshow(img)

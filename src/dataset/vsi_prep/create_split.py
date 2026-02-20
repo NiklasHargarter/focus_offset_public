@@ -2,21 +2,22 @@ import argparse
 import json
 import random
 
-from src import config
+from src.config import DatasetConfig
 from src.dataset.vsi_prep.preprocess import load_master_index
 
 
 def create_split(
     dataset_name: str,
-    stride: int = config.STRIDE,
-    downsample_factor: int = config.DOWNSAMPLE_FACTOR,
-    min_tissue_coverage: float = config.MIN_TISSUE_COVERAGE,
+    stride: int,
+    downsample_factor: int,
+    min_tissue_coverage: float,
     force: bool = False,
     split_ratio: float = 0.3,
     seed: int = 42,
 ) -> None:
     """Generate image splits (test and train_pool) from master index."""
-    split_file = config.get_split_path(dataset_name)
+    dataset_cfg = DatasetConfig(name=dataset_name)
+    split_file = dataset_cfg.split_path
 
     if split_file.exists() and not force:
         print(f"Split file {split_file} already exists. Skipping generation.")
@@ -38,14 +39,14 @@ def create_split(
         slides.append(
             {
                 "name": entry.name,
-                "samples": entry.total_samples,
-                "patches": entry.patch_count,
+                "samples": int(entry.total_samples),
+                "patches": int(entry.patch_count),
             }
         )
 
-    total_samples = sum(s["samples"] for s in slides)
-    total_patches = sum(s["patches"] for s in slides)
-    target_test_samples = total_samples * split_ratio
+    total_samples = int(sum(int(s["samples"]) for s in slides))  # type: ignore
+    total_patches = int(sum(int(s["patches"]) for s in slides))  # type: ignore
+    target_test_samples = int(total_samples * split_ratio)
 
     print(f"Total slides: {len(slides)}")
     print(
@@ -63,9 +64,10 @@ def create_split(
     current_test_samples = 0
 
     for slide in slides:
+        slide_samples = int(slide["samples"])  # type: ignore
         if current_test_samples < target_test_samples:
             test_files.append(slide["name"])
-            current_test_samples += slide["samples"]
+            current_test_samples += slide_samples
         else:
             train_pool_files.append(slide["name"])
 
@@ -77,8 +79,8 @@ def create_split(
     )
 
     split_data = {
-        "test": sorted(test_files),
-        "train_pool": sorted(train_pool_files),
+        "test": sorted([str(name) for name in test_files]),
+        "train_pool": sorted([str(name) for name in train_pool_files]),
         "seed": seed,
         "total_slides": len(file_registry),
         "total_patches": total_patches,
@@ -92,14 +94,17 @@ def create_split(
 
 
 if __name__ == "__main__":
+    dataset_cfg = DatasetConfig()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
-    parser.add_argument("--stride", type=int, default=config.STRIDE)
+    parser.add_argument("--dataset", type=str, default=dataset_cfg.name)
+    parser.add_argument("--stride", type=int, default=dataset_cfg.prep.stride)
     parser.add_argument(
-        "--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR
+        "--downsample_factor", type=int, default=dataset_cfg.prep.downsample_factor
     )
     parser.add_argument(
-        "--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE
+        "--min_tissue_coverage",
+        type=float,
+        default=dataset_cfg.prep.min_tissue_coverage,
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--split_ratio", type=float, default=0.3)

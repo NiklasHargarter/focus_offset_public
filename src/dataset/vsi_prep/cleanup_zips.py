@@ -1,15 +1,16 @@
 import argparse
 
-from src import config
+from src.config import DatasetConfig
 from src.dataset.vsi_prep.fix_zip import verify_vsi
 
 
-def cleanup_zips(dataset_name: str = config.DATASET_NAME):
+def cleanup_zips(dataset_name: str = "ZStack_HE"):
     """
     Check raws folder for vsi files, verify them, and delete the corresponding zip file.
     """
-    zip_dir = config.get_vsi_zip_dir(dataset_name)
-    raw_dir = config.get_vsi_raw_dir(dataset_name)
+    dataset_cfg = DatasetConfig(name=dataset_name)
+    zip_dir = dataset_cfg.zip_dir
+    raw_dir = dataset_cfg.raw_dir
 
     if not raw_dir.exists():
         print(f"Error: Raw directory {raw_dir} does not exist.")
@@ -58,10 +59,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Cleanup ZIP files for VSIs that are already extracted and verified."
     )
+    dataset_cfg = DatasetConfig()
     parser.add_argument(
         "--dataset",
         type=str,
-        default=config.DATASET_NAME,
+        default=dataset_cfg.name,
         help="Dataset name to clean up",
     )
     args = parser.parse_args()

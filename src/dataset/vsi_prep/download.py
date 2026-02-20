@@ -7,7 +7,7 @@ from exact_sync.v1.api.images_api import ImagesApi
 from exact_sync.v1.api_client import ApiClient
 from exact_sync.v1.configuration import Configuration
 
-from src import config
+from src.config import DatasetConfig
 from src.dataset.vsi_prep.fix_zip import (
     cleanup_corrupt_vsi,
     extract_zip,
@@ -78,19 +78,20 @@ def process_image(img_info, dataset_name, raw_dir, zip_dir, keep_zip):
 
 
 def download_dataset(
-    dataset_name: str = config.DATASET_NAME,
+    dataset_name: str = "ZStack_HE",
     force: bool = False,
     keep_zip: bool = False,
-    limit: int = None,
-    exclude: str = config.EXCLUDE_PATTERN,
+    limit: int | None = None,
+    exclude: str = "_all_",
     workers: int = 4,
 ) -> None:
     """Download, extract, and verify VSI files in parallel."""
     print(f"Fetching full image list for {dataset_name} from EXACT...")
     all_images = get_exact_image_list(dataset_name=dataset_name, force=force)
 
-    zip_dir = config.get_vsi_zip_dir(dataset_name)
-    raw_dir = config.get_vsi_raw_dir(dataset_name)
+    dataset_cfg = DatasetConfig(name=dataset_name)
+    zip_dir = dataset_cfg.zip_dir
+    raw_dir = dataset_cfg.raw_dir
 
     zip_dir.mkdir(parents=True, exist_ok=True)
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -100,7 +101,7 @@ def download_dataset(
     print(f"Total images in dataset: {len(all_images)}")
 
     # Filter against splits if they exist
-    split_path = config.get_split_path(dataset_name)
+    split_path = dataset_cfg.split_path
     if split_path.exists():
         print(f"Loading splits from {split_path} to filter downloads...")
         with open(split_path, "r") as f:
@@ -150,7 +151,7 @@ def download_dataset(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
+    parser.add_argument("--dataset", type=str, default="ZStack_HE")
     parser.add_argument(
         "--force", action="store_true", help="Force refresh image list from EXACT"
     )
@@ -163,9 +164,7 @@ if __name__ == "__main__":
         "--limit", type=int, default=None, help="Limit number of slides to download"
     )
     parser.add_argument(
-        "--exclude",
-        type=str,
-        default=config.EXCLUDE_PATTERN,
+        default="_all_",
         help="Exclude slides containing this string in their name",
     )
     parser.add_argument(

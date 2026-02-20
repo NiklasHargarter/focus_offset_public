@@ -1,6 +1,6 @@
 import argparse
 
-from src import config
+from src.config import DatasetConfig
 from src.dataset.vsi_prep.create_split import create_split
 from src.dataset.vsi_prep.download import download_dataset
 from src.dataset.vsi_prep.fix_zip import fix_zip_structure
@@ -15,8 +15,8 @@ def sync(
     force: bool = False,
     skip_preprocess: bool = False,
     skip_split: bool = False,
-    limit: int = None,
-    exclude: str = config.EXCLUDE_PATTERN,
+    limit: int | None = None,
+    exclude: str = "_all_",
 ):
     """
     Orchestrates the full dataset preparation pipeline:
@@ -43,6 +43,7 @@ def sync(
             downsample_factor=downsample_factor,
             min_tissue_coverage=min_tissue_coverage,
             force=force,
+            exclude=exclude,
         )
     else:
         print("\n[Step 3] Skipping Preprocessing.")
@@ -63,16 +64,19 @@ def sync(
 
 
 if __name__ == "__main__":
+    dataset_cfg = DatasetConfig()
     parser = argparse.ArgumentParser(
         description="Synchronize and preprocess the dataset."
     )
-    parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
-    parser.add_argument("--stride", type=int, default=config.STRIDE)
+    parser.add_argument("--dataset", type=str, default=dataset_cfg.name)
+    parser.add_argument("--stride", type=int, default=dataset_cfg.prep.stride)
     parser.add_argument(
-        "--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR
+        "--downsample_factor", type=int, default=dataset_cfg.prep.downsample_factor
     )
     parser.add_argument(
-        "--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE
+        "--min_tissue_coverage",
+        type=float,
+        default=dataset_cfg.prep.min_tissue_coverage,
     )
     parser.add_argument(
         "--force", action="store_true", help="Force re-preprocessing of ALL files"
@@ -89,7 +93,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exclude",
         type=str,
-        default=config.EXCLUDE_PATTERN,
+        default=dataset_cfg.exclude_pattern,
         help="Exclude slides containing this string in their name",
     )
 

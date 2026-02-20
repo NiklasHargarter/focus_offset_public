@@ -11,10 +11,10 @@ import cv2
 import numpy as np
 import slideio
 
-from src import config
+from src.config import DatasetConfig
 from src.dataset.prep.grid import filter_by_tissue_coverage, generate_grid
 from src.dataset.prep.tissue_detection import detect_tissue_mask
-from src.dataset.vsi_types import MasterIndex, PreprocessConfig, SlideMetadata
+from src.dataset.index_types import MasterIndex, PreprocessConfig, SlideMetadata
 from src.utils.focus_metrics import compute_brenner_gradient
 from src.utils.io_utils import suppress_stderr
 
@@ -24,10 +24,12 @@ from src.utils.io_utils import suppress_stderr
 # ---------------------------------------------------------------------------
 
 
-def read_thumbnail_rgb(scene, width: int, height: int) -> np.ndarray:
+def read_thumbnail_rgb(
+    scene, width: int, height: int, mask_downscale: int
+) -> np.ndarray:
     """Read a small RGB thumbnail from the first z-slice."""
-    d_w = width // config.MASK_DOWNSCALE
-    d_h = height // config.MASK_DOWNSCALE
+    d_w = width // mask_downscale
+    d_h = height // mask_downscale
     img = scene.read_block(rect=(0, 0, width, height), size=(d_w, d_h), slices=(0, 1))
     if img.ndim == 4:
         img = img[0]
@@ -64,7 +66,9 @@ def build_patch_index(candidates, best_zs) -> np.ndarray:
     return np.column_stack([coords, best_zs])
 
 
-def process_slide(slide_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
+def process_slide(
+    slide_path: Path, cfg: PreprocessConfig, mask_downscale: int
+) -> SlideMetadata:
     """Full single-slide pipeline: thumbnail → mask → grid → focus → index."""
     raw_extent = cfg.patch_size * cfg.downsample_factor
 
@@ -75,7 +79,7 @@ def process_slide(slide_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
     num_z = scene.num_z_slices
 
     print(f"[{slide_path.name}] tissue mask")
-    thumbnail = read_thumbnail_rgb(scene, width, height)
+    thumbnail = read_thumbnail_rgb(scene, width, height, mask_downscale)
     mask = detect_tissue_mask(thumbnail_rgb=thumbnail)
 
     print(f"[{slide_path.name}] grid + tissue filter")
@@ -85,7 +89,7 @@ def process_slide(slide_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
         mask,
         raw_extent,
         cfg.min_tissue_coverage,
-        mask_downscale=config.MASK_DOWNSCALE,
+        mask_downscale=mask_downscale,
     )
 
     if not candidates:
@@ -113,31 +117,40 @@ def load_master_index(
     downsample_factor: int,
     min_tissue_coverage: float,
 ) -> MasterIndex | None:
-    manifest_path = config.get_master_index_path(
-        dataset_name, stride, downsample_factor, min_tissue_coverage
-    )
-    indices_dir = config.get_slide_index_dir(
-        dataset_name, stride, downsample_factor, min_tissue_coverage
-    )
+    dataset_cfg = DatasetConfig(name=dataset_name)
+    dataset_cfg.prep.stride = stride
+    dataset_cfg.prep.downsample_factor = downsample_factor
+    dataset_cfg.prep.min_tissue_coverage = min_tissue_coverage
+
+    manifest_path = dataset_cfg.get_master_index_path()
+    indices_dir = dataset_cfg.get_slide_index_dir()
 
     if not manifest_path.exists():
+        print(f"DEBUG: Manifest path {manifest_path} does not exist.")
         return None
 
     try:
+        print(f"DEBUG: Loading manifest from {manifest_path}...")
         with open(manifest_path, "rb") as f:
             manifest_data = pickle.load(f)
+        print("DEBUG: Manifest loaded.")
 
         if isinstance(manifest_data, MasterIndex):
             return manifest_data
 
+        print(f"DEBUG: Loading individual slide indices from {indices_dir}...")
         slide_metadatas = []
-        for pkl_path in sorted(indices_dir.glob("*.pkl")):
+        pkl_files = sorted(indices_dir.glob("*.pkl"))
+        print(f"DEBUG: Found {len(pkl_files)} pkl files.")
+        for i, pkl_path in enumerate(pkl_files):
+            if i % 100 == 0:
+                print(f"DEBUG: Loading {i}/{len(pkl_files)}")
             try:
                 with open(pkl_path, "rb") as f:
                     slide_metadatas.append(pickle.load(f))
             except Exception:
                 continue
-
+        print("DEBUG: All slide indices loaded.")
         return MasterIndex(
             file_registry=slide_metadatas,
             config_state=manifest_data["config_state"],
@@ -158,11 +171,11 @@ def save_slide_json(result: SlideMetadata, pkl_path: Path):
         json.dump(data, f)
 
 
-def save_master_index_json(master_index: MasterIndex, dataset_name: str) -> None:
+def save_master_index_json(
+    master_index: MasterIndex, dataset_name: str, dataset_cfg: DatasetConfig
+) -> None:
     cfg = master_index.config_state
-    json_path = config.get_master_index_path(
-        dataset_name, cfg.stride, cfg.downsample_factor, cfg.min_tissue_coverage
-    ).with_suffix(".json")
+    json_path = dataset_cfg.get_master_index_path().with_suffix(".json")
     data = {
         "dataset_name": dataset_name,
         "config": asdict(cfg),
@@ -170,7 +183,7 @@ def save_master_index_json(master_index: MasterIndex, dataset_name: str) -> None
     }
 
     for slide in master_index.file_registry:
-        data["slides"].append(
+        data["slides"].append(  # type: ignore
             {
                 "name": slide.name,
                 "num_z": slide.num_z,
@@ -191,20 +204,21 @@ def preprocess_dataset(
     limit: int | None = None,
     workers: int | None = None,
     force: bool = False,
-    exclude: str = config.EXCLUDE_PATTERN,
+    exclude: str = "_all_",
 ) -> None:
-    raw_dir = config.get_vsi_raw_dir(dataset_name)
-    manifest_path = config.get_master_index_path(
-        dataset_name, stride, downsample_factor, min_tissue_coverage
-    )
-    indices_dir = config.get_slide_index_dir(
-        dataset_name, stride, downsample_factor, min_tissue_coverage
-    )
+    dataset_cfg = DatasetConfig(name=dataset_name)
+    dataset_cfg.prep.stride = stride
+    dataset_cfg.prep.downsample_factor = downsample_factor
+    dataset_cfg.prep.min_tissue_coverage = min_tissue_coverage
+
+    raw_dir = dataset_cfg.raw_dir
+    manifest_path = dataset_cfg.get_master_index_path()
+    indices_dir = dataset_cfg.get_slide_index_dir()
 
     workers = workers or os.cpu_count() or 1
 
     current_config = PreprocessConfig(
-        patch_size=config.PATCH_SIZE,
+        patch_size=dataset_cfg.prep.patch_size,
         stride=stride,
         downsample_factor=downsample_factor,
         min_tissue_coverage=min_tissue_coverage,
@@ -239,49 +253,58 @@ def preprocess_dataset(
 
     files_to_process = [f for f in all_files if f.name not in processed_names]
 
-    print(f"Preprocessing {dataset_name} (Stride={stride}, Patch={config.PATCH_SIZE})")
+    print(
+        f"Preprocessing {dataset_name} (Stride={stride}, Patch={dataset_cfg.prep.patch_size})"
+    )
     print(f"Total: {len(all_files)} | Remaining: {len(files_to_process)}")
 
     if not manifest_path.exists() or force:
-        with open(manifest_path, "wb") as f:
-            pickle.dump({"config_state": current_config}, f)
+        with open(manifest_path, "wb") as f_out:
+            pickle.dump({"config_state": current_config}, f_out)
 
     if files_to_process:
-        with multiprocessing.Pool(workers) as pool:
-            process_func = partial(_process_slide_worker, cfg=current_config)
+        process_func = partial(
+            _process_slide_worker,
+            cfg=current_config,
+            mask_downscale=dataset_cfg.prep.mask_downscale,
+        )
 
-            for result in pool.imap_unordered(process_func, files_to_process):
-                if result is not None:
-                    slide_pkl_path = indices_dir / f"{result.name}.pkl"
-                    with open(slide_pkl_path, "wb") as f:
-                        pickle.dump(result, f)
-                    save_slide_json(result, slide_pkl_path)
-                    existing_results.append(result)
-                    print(f"  [SAVE] {result.name} saved")
+        for f in files_to_process:
+            result = process_func(f)
+            if result is not None:
+                slide_pkl_path = indices_dir / f"{result.name}.pkl"
+                with open(slide_pkl_path, "wb") as f_slide:
+                    pickle.dump(result, f_slide)
+                save_slide_json(result, slide_pkl_path)
+                existing_results.append(result)
+                print(f"  [SAVE] {result.name} saved")
 
     if existing_results:
         master_index = MasterIndex(
             file_registry=sorted(existing_results, key=lambda x: x.name),
             config_state=current_config,
         )
-        with open(manifest_path, "wb") as f:
-            pickle.dump(master_index, f)
-        save_master_index_json(master_index, dataset_name)
+        with open(manifest_path, "wb") as f_final:
+            pickle.dump(master_index, f_final)
+        save_master_index_json(master_index, dataset_name, dataset_cfg)
 
 
-def _process_slide_worker(slide_path: Path, cfg: PreprocessConfig):
-    return process_slide(slide_path, cfg)
+def _process_slide_worker(slide_path: Path, cfg: PreprocessConfig, mask_downscale: int):
+    return process_slide(slide_path, cfg, mask_downscale)
 
 
 if __name__ == "__main__":
+    dataset_cfg = DatasetConfig()
     parser = argparse.ArgumentParser(description="Baseline VSI Preprocessor.")
     parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--stride", type=int, default=config.STRIDE)
+    parser.add_argument("--stride", type=int, default=dataset_cfg.prep.stride)
     parser.add_argument(
-        "--downsample_factor", type=int, default=config.DOWNSAMPLE_FACTOR
+        "--downsample_factor", type=int, default=dataset_cfg.prep.downsample_factor
     )
     parser.add_argument(
-        "--min_tissue_coverage", type=float, default=config.MIN_TISSUE_COVERAGE
+        "--min_tissue_coverage",
+        type=float,
+        default=dataset_cfg.prep.min_tissue_coverage,
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=None)

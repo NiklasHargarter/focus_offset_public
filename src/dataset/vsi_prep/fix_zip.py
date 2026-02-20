@@ -5,7 +5,7 @@ from pathlib import Path
 
 import slideio
 
-from src import config
+from src.config import DatasetConfig
 from src.utils.io_utils import suppress_stderr
 
 
@@ -73,10 +73,11 @@ def cleanup_corrupt_vsi(vsi_path: Path, zip_source: Path, extract_target: Path) 
         print(f"       Deleted source zip: {zip_path.name}")
 
 
-def fix_zip_structure(dataset_name: str = config.DATASET_NAME) -> None:
+def fix_zip_structure(dataset_name: str = "ZStack_HE") -> None:
     """Extract and verify all VSI zips."""
-    zip_source = config.get_vsi_zip_dir(dataset_name)
-    extract_target = config.get_vsi_raw_dir(dataset_name)
+    dataset_cfg = DatasetConfig(name=dataset_name)
+    zip_source = dataset_cfg.zip_dir
+    extract_target = dataset_cfg.raw_dir
 
     if not zip_source.exists():
         print(f"Error: Zip directory {zip_source} does not exist for {dataset_name}.")
@@ -101,7 +102,8 @@ def fix_zip_structure(dataset_name: str = config.DATASET_NAME) -> None:
 
 
 if __name__ == "__main__":
+    dataset_cfg = DatasetConfig()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default=config.DATASET_NAME)
+    parser.add_argument("--dataset", type=str, default=dataset_cfg.name)
     args = parser.parse_args()
     fix_zip_structure(dataset_name=args.dataset)

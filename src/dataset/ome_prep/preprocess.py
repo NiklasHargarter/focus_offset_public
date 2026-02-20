@@ -9,10 +9,10 @@ import cv2
 import numpy as np
 import tifffile
 
-from src import config
+from src.config import DatasetConfig
 from src.dataset.prep.grid import filter_by_tissue_coverage, generate_grid
 from src.dataset.prep.tissue_detection import detect_tissue_mask
-from src.dataset.vsi_types import MasterIndex, PreprocessConfig, SlideMetadata
+from src.dataset.index_types import MasterIndex, PreprocessConfig, SlideMetadata
 from src.utils.focus_metrics import compute_brenner_gradient
 
 
@@ -28,7 +28,7 @@ class OMEImageReader:
         self.size = (self.width, self.height)
 
     def read_block(
-        self, rect: tuple[int, int, int, int], slices: tuple[int, int] = None
+        self, rect: tuple[int, int, int, int], slices: tuple[int, int] | None = None
     ) -> np.ndarray:
         x, y, w, h = rect
         z_start, z_end = slices if slices else (0, self.num_z)
@@ -51,10 +51,12 @@ class OMEImageReader:
 # ---------------------------------------------------------------------------
 
 
-def read_thumbnail_rgb(reader: OMEImageReader, width: int, height: int) -> np.ndarray:
+def read_thumbnail_rgb(
+    reader: OMEImageReader, width: int, height: int, mask_downscale: int
+) -> np.ndarray:
     """Read a small RGB thumbnail from the first z-slice."""
-    d_w = width // config.MASK_DOWNSCALE
-    d_h = height // config.MASK_DOWNSCALE
+    d_w = width // mask_downscale
+    d_h = height // mask_downscale
     full_img = reader.read_block((0, 0, width, height), (0, 1))[0]
     small = cv2.resize(full_img, (d_w, d_h))
     return cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
@@ -83,7 +85,9 @@ def build_patch_index(candidates, best_zs) -> np.ndarray:
     return np.column_stack([coords, best_zs])
 
 
-def process_image(img_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
+def process_image(
+    img_path: Path, cfg: PreprocessConfig, mask_downscale: int
+) -> SlideMetadata:
     """Full single-image pipeline: thumbnail → mask → grid → focus → index."""
     raw_extent = cfg.patch_size * cfg.downsample_factor
 
@@ -92,7 +96,7 @@ def process_image(img_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
     num_z = reader.num_z
 
     print(f"[{img_path.name}] tissue mask")
-    thumbnail = read_thumbnail_rgb(reader, width, height)
+    thumbnail = read_thumbnail_rgb(reader, width, height, mask_downscale)
     mask = detect_tissue_mask(thumbnail_rgb=thumbnail)
 
     print(f"[{img_path.name}] grid + tissue filter")
@@ -102,7 +106,7 @@ def process_image(img_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
         mask,
         raw_extent,
         cfg.min_tissue_coverage,
-        mask_downscale=config.MASK_DOWNSCALE,
+        mask_downscale=mask_downscale,
     )
 
     if not candidates:
@@ -126,9 +130,9 @@ def process_image(img_path: Path, cfg: PreprocessConfig) -> SlideMetadata:
     )
 
 
-def _process_image_worker(img_path: Path, cfg: PreprocessConfig):
+def _process_image_worker(img_path: Path, cfg: PreprocessConfig, mask_downscale: int):
     try:
-        return process_image(img_path, cfg)
+        return process_image(img_path, cfg, mask_downscale)
     except Exception as e:
         print(f"Error processing {img_path}: {e}")
         return None
@@ -143,18 +147,19 @@ def preprocess_dataset(
     workers: int | None = None,
     force: bool = False,
 ) -> None:
-    raw_dir = config.get_vsi_raw_dir(dataset_name)
-    manifest_path = config.get_master_index_path(
-        dataset_name, stride, downsample_factor, min_tissue_coverage
-    )
-    indices_dir = config.get_slide_index_dir(
-        dataset_name, stride, downsample_factor, min_tissue_coverage
-    )
+    dataset_cfg = DatasetConfig(name=dataset_name)
+    dataset_cfg.prep.stride = stride
+    dataset_cfg.prep.downsample_factor = downsample_factor
+    dataset_cfg.prep.min_tissue_coverage = min_tissue_coverage
+
+    raw_dir = dataset_cfg.raw_dir
+    manifest_path = dataset_cfg.get_master_index_path()
+    indices_dir = dataset_cfg.get_slide_index_dir()
     indices_dir.mkdir(parents=True, exist_ok=True)
 
     workers = workers or os.cpu_count() or 1
     current_config = PreprocessConfig(
-        patch_size=config.PATCH_SIZE,
+        patch_size=dataset_cfg.prep.patch_size,
         stride=stride,
         downsample_factor=downsample_factor,
         min_tissue_coverage=min_tissue_coverage,
@@ -187,12 +192,16 @@ def preprocess_dataset(
 
     if files_to_process:
         with multiprocessing.Pool(workers) as pool:
-            process_func = partial(_process_image_worker, cfg=current_config)
+            process_func = partial(
+                _process_image_worker,
+                cfg=current_config,
+                mask_downscale=dataset_cfg.prep.mask_downscale,
+            )
             for result in pool.imap_unordered(process_func, files_to_process):
                 if result is not None:
                     slide_pkl_path = indices_dir / f"{result.name}.pkl"
-                    with open(slide_pkl_path, "wb") as f:
-                        pickle.dump(result, f)
+                    with open(slide_pkl_path, "wb") as f_slide:
+                        pickle.dump(result, f_slide)
                     existing_results.append(result)
 
     if existing_results:
@@ -200,15 +209,16 @@ def preprocess_dataset(
             file_registry=sorted(existing_results, key=lambda x: x.name),
             config_state=current_config,
         )
-        with open(manifest_path, "wb") as f:
-            pickle.dump(master_index, f)
+        with open(manifest_path, "wb") as f_final:
+            pickle.dump(master_index, f_final)
         print(f"Master index saved to {manifest_path}")
 
 
 if __name__ == "__main__":
+    dataset_cfg = DatasetConfig()
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, required=True)
-    parser.add_argument("--stride", type=int, default=config.STRIDE)
+    parser.add_argument("--stride", type=int, default=dataset_cfg.prep.stride)
     parser.add_argument("--downsample_factor", type=int, default=1)
     parser.add_argument("--min_tissue_coverage", type=float, default=0.01)
     parser.add_argument("--limit", type=int, default=None)

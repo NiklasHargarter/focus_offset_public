@@ -6,14 +6,14 @@ from exact_sync.v1.api.images_api import ImagesApi
 from exact_sync.v1.api_client import ApiClient
 from exact_sync.v1.configuration import Configuration
 
-from src import config
+from src.config import CACHE_DIR
 
 
 def get_exact_image_list(
-    dataset_name: str = config.DATASET_NAME, force: bool = False
+    dataset_name: str = "ZStack_HE", force: bool = False
 ) -> list[dict]:
     """Fetch image list from EXACT and cache results."""
-    cache_file = config.CACHE_DIR / f"exact_images_{dataset_name}.json"
+    cache_file = CACHE_DIR / f"exact_images_{dataset_name}.json"
 
     if not force and cache_file.exists():
         with open(cache_file, "r") as f:
@@ -45,7 +45,7 @@ def get_exact_image_list(
         img_obj = images_api.retrieve_image(id=image_id)
         target_images.append({"id": image_id, "name": img_obj.name})
 
-    config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     with open(cache_file, "w") as f:
         json.dump(target_images, f, indent=4)
 

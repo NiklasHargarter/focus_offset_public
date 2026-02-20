@@ -4,14 +4,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypedDict
 
-import cv2
-import numpy as np
-import tifffile
+import slideio
 import torch
 from torch.utils.data import Dataset
 
 from src.config import DatasetConfig
 from src.dataset.index_types import ProcessedIndex
+from src.utils.io_utils import suppress_stderr
 
 
 class SampleMetadata(TypedDict, total=False):
@@ -33,21 +32,20 @@ METADATA_DEFAULTS: dict[str, Any] = {
 }
 
 
-class OMEDataset(Dataset):
+class VSIDataset(Dataset):
     """
-    Worker-safe Dataset for OME-TIFF patches.
-    Uses tifffile for reading multi-series Z-stacks.
+    Dataset for VSI patches.
+    Uses worker-safe lazy initialization with PID tracking to ensure slide handles
+    are never shared across processes.
     """
 
     def __init__(
         self,
         index_data: ProcessedIndex,
         transform: Any | None = None,
-        z_res_microns: float = 1.0,  # Default fallback if metadata is missing
     ):
         self.index = index_data
         self.transform = transform
-        self.z_res_microns = z_res_microns
 
         self.patch_size = self.index.patch_size
         self.downsample_factor = self.index.downsample_factor
@@ -57,7 +55,7 @@ class OMEDataset(Dataset):
         self.total_samples = self.index.total_samples
         self.file_registry = self.index.file_registry
 
-        self._readers: dict[str, Any] | None = None
+        self._slides: dict[str, Any] | None = None
         self._owner_pid: int | None = None
 
     def __len__(self) -> int:
@@ -87,14 +85,20 @@ class OMEDataset(Dataset):
 
         return file_meta, file_idx, patch_info, z_level
 
-    def _get_reader(self, img_path_str: str):
+    def _get_scene(self, vsi_path: str):
+        """
+        Lazy initialization of slide handles, unique to each worker process.
+        """
         current_pid = os.getpid()
-        if self._readers is None or self._owner_pid != current_pid:
-            self._readers = {}
+
+        if self._slides is None or self._owner_pid != current_pid:
+            self._slides = {}
             self._owner_pid = current_pid
 
-        if img_path_str not in self._readers:
-            actual_path = Path(img_path_str)
+        if vsi_path not in self._slides:
+            # Robust path handling: Check if the stored path exists,
+            # if not, try to find it in the current dataset raws directory.
+            actual_path = Path(vsi_path)
             if not actual_path.exists() and self.dataset_name:
                 raw_dir = DatasetConfig(name=self.dataset_name).raw_dir
                 alt_path = raw_dir / actual_path.name
@@ -102,59 +106,63 @@ class OMEDataset(Dataset):
                     actual_path = alt_path
 
             try:
-                # Store the TiffFile object
-                reader = tifffile.TiffFile(actual_path)
-                self._readers[img_path_str] = reader
+                with suppress_stderr():
+                    slide = slideio.open_slide(str(actual_path), "VSI")
+                    scene = slide.get_scene(0)
+                self._slides[vsi_path] = (slide, scene)
             except Exception as e:
                 raise RuntimeError(
-                    f"Error opening OME-TIFF in process {current_pid}: {actual_path}. Error: {e}"
+                    f"Error opening slide in process {current_pid}: {actual_path}. Error: {e}"
                 )
 
-        return self._readers[img_path_str]
+        return self._slides[vsi_path][1]
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
+        """
+        Maps a global linear index to a specific (Slide, Patch, Z-slice) triplet.
+        """
         try:
             file_meta, _, patch_info, z_level = self._get_grid_info(idx)
 
-            img_name = file_meta.name
+            vsi_name = file_meta.name
             num_z = file_meta.num_z
             x, y, best_z = patch_info
 
-            reader = self._get_reader(img_name)
+            scene = self._get_scene(vsi_name)
 
-            # Calculate focus offset
-            # TODO: Attempt to extract z_res_microns from OME-XML if possible
-            z_offset = float(best_z - z_level) * self.z_res_microns
+            # Calculate focus offset in microns (Target for the regression model)
+            z_res = getattr(scene, "z_resolution", 0)
+            if not z_res:
+                raise RuntimeError(
+                    f"Slide {vsi_name} from {self.dataset_name} has no Z-resolution metadata. "
+                    "Physical micron-based focus offset cannot be calculated."
+                )
+            z_res_microns = z_res * 1e6
+            z_offset = (best_z - z_level) * z_res_microns
 
-            # Read the patch from the specific series (z_level)
-            # In multi-series OME-TIFF, series corresponds to Z
-            series = reader.series[z_level]
-
-            # Crop raw patch, then resize to ViT output resolution
             raw_extent = self.patch_size * self.downsample_factor
+            rect = (
+                int(x),
+                int(y),
+                raw_extent,
+                raw_extent,
+            )
 
-            full_plane = series.asarray()
-            block = full_plane[
-                int(y) : int(y + raw_extent), int(x) : int(x + raw_extent)
-            ]
-
-            # Grayscale to RGB if needed
-            if block.ndim == 2:
-                block = np.stack([block] * 3, axis=-1)
-            elif block.shape[-1] == 1:
-                block = np.concatenate([block] * 3, axis=-1)
-
-            # Resize to patch_size (identity when ds=1)
-            if block.shape[0] != self.patch_size or block.shape[1] != self.patch_size:
-                block = cv2.resize(block, (self.patch_size, self.patch_size))
+            # Efficient single-slice read from VSI, with downscaling
+            block = scene.read_block(
+                rect=rect,
+                size=(self.patch_size, self.patch_size),
+                slices=(z_level, z_level + 1),
+            )
 
             if self.transform:
+                # Albumentations standard call
                 image = self.transform(image=block)["image"]
             else:
                 image = torch.from_numpy(block).permute(2, 0, 1).float() / 255.0
 
             metadata = {
-                "filename": img_name,
+                "filename": vsi_name,
                 "x": int(x),
                 "y": int(y),
                 "z_level": int(z_level),
@@ -162,7 +170,7 @@ class OMEDataset(Dataset):
                 "num_z": int(num_z),
             }
 
-            # Fill defaults
+            # Fill defaults if missing (though here we explicitly set them all)
             for key, default in METADATA_DEFAULTS.items():
                 if key not in metadata:
                     metadata[key] = default
@@ -174,7 +182,7 @@ class OMEDataset(Dataset):
             }
 
         except Exception as e:
-            # We print error but re-raise to be safe
-            # x, y, z_level might not be bound if exception happens early
+            # We don't have vsi_name/rect/z_level if _get_grid_info fails
+            # But usually it fails inside the try block after resolving
             print(f"Error reading index {idx}: {e}")
             raise

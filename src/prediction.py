@@ -1,7 +1,7 @@
 """
 Core prediction / evaluation logic.
 
-Provides ``evaluate()`` — run inference for a single checkpoint on a datamodule
+Provides ``evaluate()`` — run inference for a single checkpoint on a dataloader
 and persist a flat CSV of predictions.
 
 Imported by ``scripts/predict.py`` (CLI) and any other script that needs
@@ -10,16 +10,20 @@ programmatic evaluation.
 
 from pathlib import Path
 
-import lightning as L
 import pandas as pd
 import torch
+from accelerate import Accelerator
+from tqdm.auto import tqdm
+
+from src.models.architectures import MODEL_REGISTRY
 
 
 def evaluate(
-    datamodule: L.LightningDataModule,
+    dataloader: torch.utils.data.DataLoader,
     checkpoint_path: str | Path,
     output_dir: str | Path | None = None,
     dry_run: bool = False,
+    dataset_name: str = "unknown",
 ) -> pd.DataFrame:
     """Run inference on the test set and save a predictions CSV.
 
@@ -31,8 +35,8 @@ def evaluate(
 
     Parameters
     ----------
-    datamodule : L.LightningDataModule
-        Must expose a ``predict_dataloader`` (usually == test_dataloader).
+    dataloader : DataLoader
+        Standard PyTorch DataLoader.
     checkpoint_path : path
         Path to the single model checkpoint.
     output_dir : path, optional
@@ -40,35 +44,104 @@ def evaluate(
         the checkpoint path.
     dry_run : bool
         Limit to 2 batches for smoke testing.
+    dataset_name : str
+        Name of the dataset for logging purposes.
 
     Returns
     -------
     pd.DataFrame
         The full predictions table (same content that was written to disk).
     """
-    from src.models.lightning_module import FocusOffsetRegressor
-
     checkpoint_path = Path(checkpoint_path)
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    trainer = L.Trainer(
-        accelerator="auto",
-        devices=1,
-        precision="bf16-mixed",
-        logger=False,
-        limit_predict_batches=2 if dry_run else None,
+    # 1. Setup Accelerator for inference
+    accelerator = Accelerator(
+        mixed_precision="bf16",
     )
 
-    print(f"Loading model from {checkpoint_path.name}...")
-    model = FocusOffsetRegressor.load_from_checkpoint(checkpoint_path)
+    # 2. Load Checkpoint
+    print(f"Loading checkpoint from {checkpoint_path.name}...")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    # Handle different checkpoint formats (full dict vs state_dict only)
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        model_name = checkpoint.get("model_name", "multimodal")
+        print(f"Detected model architecture: {model_name}")
+    else:
+        state_dict = checkpoint
+        model_name = "multimodal"  # Fallback
+        print(f"Warning: Raw state dict found. assuming '{model_name}'.")
+
+    # 3. Instantiate Model
+    if model_name not in MODEL_REGISTRY:
+        raise ValueError(
+            f"Unknown model architecture '{model_name}'. Available: {list(MODEL_REGISTRY.keys())}"
+        )
+
+    import torch.nn as nn
+
+    model: nn.Module = MODEL_REGISTRY[model_name]()
+    model.load_state_dict(state_dict)
     model.eval()
 
-    model_name = model.hparams.get("model_name", "unknown")
-    outputs = trainer.predict(model, datamodule=datamodule)
-    df = _outputs_to_df(outputs)
+    # 4. Prepare
+    model, dataloader = accelerator.prepare(model, dataloader)
 
-    dataset_name = getattr(datamodule, "dataset_name", "unknown")
+    # 5. Inference Loop
+    results = []
+
+    print(f"Running inference on {accelerator.device}...")
+    with torch.no_grad():
+        for batch_idx, batch in tqdm(
+            enumerate(dataloader),
+            desc="Predicting",
+            disable=not accelerator.is_local_main_process,
+        ):
+            if dry_run and batch_idx >= 2:
+                break
+
+            images = batch["image"]
+            targets = batch["target"]
+
+            preds = model(images)
+
+            # Move to CPU directly since we are not doing multi-gpu gathering logic here for simplicity
+            # (Accelerate prepare handles device placement, but we want numpy/list results)
+            preds = preds.detach().float().cpu()
+            targets = targets.detach().float().cpu()
+
+            batch_size = preds.size(0)
+
+            # Handle metadata
+            # Metadata is a dict of lists or tensors. We need to "transpose" it to row-based
+            meta = batch.get("metadata", {})
+
+            for i in range(batch_size):
+                row = {
+                    "pred": preds[i].item(),
+                    "target": targets[i].item(),
+                }
+
+                # Extract metadata for this sample
+                for key, val in meta.items():
+                    if isinstance(val, torch.Tensor):
+                        if val.dim() > 0:
+                            row[key] = val[i].item()
+                        else:
+                            row[key] = val.item()
+                    elif isinstance(val, list):
+                        row[key] = val[i]
+                    # tuples etc
+                    elif isinstance(val, tuple):
+                        row[key] = val[i]
+
+                results.append(row)
+
+    df = pd.DataFrame(results)
+
     df.insert(0, "model_name", model_name)
     df.insert(1, "dataset", dataset_name)
     df.insert(2, "checkpoint", checkpoint_path.name)
@@ -81,30 +154,9 @@ def evaluate(
     csv_name = f"eval_{model_name}_{dataset_name}.csv"
     csv_path = output_dir / csv_name
     df.to_csv(csv_path, index=False)
-    print(f"  → {csv_path}  ({len(df)} rows × {len(df.columns)} cols)\n")
+    print(f"  → Saved predictions to {csv_path} ({len(df)} rows)")
 
     return df
-
-
-def _outputs_to_df(predict_outputs: list[dict]) -> pd.DataFrame:
-    """Flatten predict_step batch dicts into a per-sample DataFrame."""
-    rows: list[dict] = []
-    for batch in predict_outputs:
-        preds = batch["pred"].squeeze(-1).float().cpu()
-        targets = batch["target"].float().cpu()
-        meta = batch.get("metadata", {})
-        meta_keys = list(meta.keys())
-
-        for i in range(len(preds)):
-            row: dict = {"pred": preds[i].item(), "target": targets[i].item()}
-            for key in meta_keys:
-                vals = meta[key]
-                row[key] = (
-                    vals[i].item() if isinstance(vals[i], torch.Tensor) else vals[i]
-                )
-            rows.append(row)
-
-    return pd.DataFrame(rows)
 
 
 def _infer_log_dir(checkpoint_path: Path) -> Path:
