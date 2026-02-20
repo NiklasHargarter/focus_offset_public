@@ -5,8 +5,7 @@ Each variant uses a different input domain (RGB, FFT, DWT, Multimodal).
 
 import argparse
 
-from src.config import DatasetConfig, TrainConfig
-from src.dataset.loader import get_holdout_dataloaders
+from src.config import TrainConfig
 from src.models.architectures import MODEL_REGISTRY
 from src.training import train_one
 from src.utils.env import setup_environment
@@ -24,6 +23,13 @@ def main():
     parser.add_argument("--patience", type=int, default=train_cfg.patience)
     parser.add_argument("--learning_rate", type=float, default=train_cfg.learning_rate)
     parser.add_argument("--weight_decay", type=float, default=train_cfg.weight_decay)
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="zstack_he",
+        choices=["zstack_he", "zstack_ihc", "agnor_ome", "jiang2018"],
+        help="Dataset module to load data from",
+    )
     args = parser.parse_args()
 
     setup_environment()
@@ -33,19 +39,21 @@ def main():
         print(f"TRAINING ABLATION: {variant_name}")
         print("=" * 40 + "\n")
 
-        dataset_cfg = DatasetConfig()
+        # Dynamically import the requested dataset module
+        import importlib
+        dataset_module = importlib.import_module(f"src.datasets.{args.dataset}")
 
-        # Override default train config based on user arguments
-        train_cfg.batch_size = args.batch_size
-        train_cfg.max_epochs = args.max_epochs
-        train_cfg.patience = args.patience
-        train_cfg.learning_rate = args.learning_rate
-        train_cfg.weight_decay = args.weight_decay
-
-        train_loader, val_loader = get_holdout_dataloaders(
-            dataset_cfg=dataset_cfg,
-            train_cfg=train_cfg,
-        )
+        # Some datasets have distinct loading logic (like AgNor which uses get_dataloader instead of get_dataloaders)
+        if args.dataset in ["zstack_he", "zstack_ihc"]:
+            train_loader, val_loader = dataset_module.get_dataloaders(train_cfg=train_cfg)
+        elif args.dataset == "agnor_ome":
+            # Usually AgNor is just test evaluation, but provided here for matching interface
+            train_loader = dataset_module.get_dataloader(train_cfg=train_cfg)
+            val_loader = train_loader
+        else:
+            train_loader, val_loader = dataset_module.get_jiang2018_dataloaders(
+                batch_size=args.batch_size, num_workers=train_cfg.num_workers
+            )
 
         model = MODEL_REGISTRY[variant_name]()
 

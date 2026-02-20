@@ -3,7 +3,6 @@
 import argparse
 
 from src import config
-from src.dataset.loader import get_holdout_dataloaders
 from src.models.architectures import MODEL_REGISTRY
 from src.training import train_one
 from src.utils.env import setup_environment
@@ -19,21 +18,43 @@ def main():
         help="Model variant to train",
     )
     parser.add_argument(
+        "--dataset",
+        type=str,
+        default="zstack_he",
+        choices=["zstack_he", "zstack_ihc", "agnor_ome", "jiang2018"],
+        help="Dataset module to load data from",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Quick smoke test with 2 epochs and limited batches",
     )
-    parser.add_argument("--batch_size", type=int, default=config.BATCH_SIZE)
-    parser.add_argument("--max_epochs", type=int, default=config.MAX_EPOCHS)
-    parser.add_argument("--patience", type=int, default=config.PATIENCE)
-    parser.add_argument("--learning_rate", type=float, default=config.LEARNING_RATE)
+    train_cfg = config.TrainConfig()
+    parser.add_argument("--batch_size", type=int, default=train_cfg.batch_size)
+    parser.add_argument("--max_epochs", type=int, default=train_cfg.max_epochs)
+    parser.add_argument("--patience", type=int, default=train_cfg.patience)
+    parser.add_argument("--learning_rate", type=float, default=train_cfg.learning_rate)
     args = parser.parse_args()
 
     setup_environment()
 
-    train_loader, val_loader = get_holdout_dataloaders(
-        batch_size=args.batch_size,
-    )
+    # Dynamically import the requested dataset module
+    import importlib
+    dataset_module = importlib.import_module(f"src.datasets.{args.dataset}")
+
+    train_cfg = config.TrainConfig(batch_size=args.batch_size)
+
+    # Some datasets have distinct loading logic (like AgNor which uses get_dataloader instead of get_dataloaders)
+    if args.dataset in ["zstack_he", "zstack_ihc"]:
+        train_loader, val_loader = dataset_module.get_dataloaders(train_cfg=train_cfg)
+    elif args.dataset == "agnor_ome":
+        # Usually AgNor is just test evaluation, but provided here for matching interface
+        train_loader = dataset_module.get_dataloader(train_cfg=train_cfg)
+        val_loader = train_loader
+    else:
+        train_loader, val_loader = dataset_module.get_jiang2018_dataloaders(
+            batch_size=args.batch_size, num_workers=train_cfg.num_workers
+        )
 
     model = MODEL_REGISTRY[args.model]()
 
@@ -46,7 +67,7 @@ def main():
         patience=args.patience,
         dry_run=args.dry_run,
         learning_rate=args.learning_rate,
-        weight_decay=config.WEIGHT_DECAY,
+        weight_decay=train_cfg.weight_decay,
     )
 
 

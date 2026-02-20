@@ -2,14 +2,12 @@ import cv2
 import numpy as np
 
 
-def compute_brenner_gradient(image: np.ndarray) -> float:
+def compute_focus_score(image: np.ndarray) -> float:
     """
-    Standard Brenner Gradient focus metric.
+    Compute Focus Score using the Variance of Laplacian metric.
 
-    Source: Brenner, J. F., et al. (1976). "An automated microscope for cytologic research."
-    Formula: sum((I(x+2, y) - I(x, y))^2)
-
-    Uses float64 internally to prevent overflow on large Super Patches or ROIs.
+    This is a fast, robust, and industry-standard method for measuring 
+    image sharpness/focus. Returns a higher score for sharper images.
     """
     if image.size == 0:
         return 0.0
@@ -19,8 +17,5 @@ def compute_brenner_gradient(image: np.ndarray) -> float:
     else:
         gray = image
 
-    gray = gray.astype(np.float64)
-
-    diff = gray[:, 2:] - gray[:, :-2]
-
-    return float(np.sum(diff**2))
+    # Laplacian of the image, then compute its variance
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
