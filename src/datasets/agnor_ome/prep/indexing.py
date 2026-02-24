@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.datasets.vsi.prep.preprocess import process_vsi_slide
+from src.datasets.agnor_ome.prep.preprocess import process_ome_slide
 
 
 def _run_split(pool: Pool, files: list[Path], process_func, out_path: Path, label: str):
@@ -21,7 +21,7 @@ def _run_split(pool: Pool, files: list[Path], process_func, out_path: Path, labe
         print(f"  Saved {len(rows)} rows -> {out_path}")
 
 
-def create_vsi_split(
+def create_ome_split(
     slide_dir: Path,
     split_path: Path,
     exclude_pattern: str = "_all_",
@@ -31,12 +31,12 @@ def create_vsi_split(
     all_files = sorted(
         [
             f.name
-            for f in slide_dir.glob("*.vsi")
+            for f in slide_dir.glob("*.ome.tif*")
             if exclude_pattern.lower() not in f.name.lower()
         ]
     )
     if not all_files:
-        raise RuntimeError(f"No VSI files found in {slide_dir}")
+        raise RuntimeError(f"No OME-TIFF files found in {slide_dir}")
     random.seed(seed)
     random.shuffle(all_files)
     num_test = max(1, int(len(all_files) * split_ratio))
@@ -53,7 +53,7 @@ def create_vsi_split(
     return data
 
 
-def index_vsi_dataset(
+def index_ome_dataset(
     slide_dir: Path,
     index_dir: Path,
     split_path: Path,
@@ -62,7 +62,7 @@ def index_vsi_dataset(
     dry_run: bool = False,
 ):
     splits = (
-        create_vsi_split(slide_dir, split_path, params.get("exclude_pattern", "_all_"))
+        create_ome_split(slide_dir, split_path, params.get("exclude_pattern", "_all_"))
         if not split_path.exists()
         else json.loads(split_path.read_text())
     )
@@ -70,7 +70,10 @@ def index_vsi_dataset(
         set(splits.get("train_pool", [])),
         set(splits.get("test", [])),
     )
-    all_files = sorted(slide_dir.glob("*.vsi"))
+    all_files = sorted(
+        list(slide_dir.glob("*.ome.tiff")) + list(slide_dir.glob("*.ome.tif"))
+    )
+
     if "exclude_pattern" in params:
         all_files = [
             f
@@ -84,7 +87,7 @@ def index_vsi_dataset(
     else:
         train_files = all_files
     test_files = [f for f in all_files if f.name in test_names]
-    process_func = partial(process_vsi_slide, params=params, dry_run=dry_run)
+    process_func = partial(process_ome_slide, params=params, dry_run=dry_run)
     with Pool(workers or os.cpu_count() or 1) as pool:
         _run_split(
             pool, train_files, process_func, index_dir / "train.parquet", "train"

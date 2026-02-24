@@ -1,56 +1,35 @@
 import os
-from dataclasses import dataclass, field
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+# Layout Constants
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data/niklas"))
-CACHE_DIR = PROJECT_ROOT / "cache"
+CACHE_ROOT = PROJECT_ROOT / "cache"
+SPLITS_ROOT = PROJECT_ROOT / "splits"
 
 
-@dataclass
-class PrepConfig:
-    stride: int = 224
-    downsample_factor: int = 1
-    min_tissue_coverage: float = 0.80
-    patch_size: int = 224
-
-
-@dataclass
 class AgNorOMEConfig:
-    name: str = "AgNor_OME"
+    name: str = "AgNor"
     exclude_pattern: str = "_all_"
-    prep: PrepConfig = field(default_factory=PrepConfig)
+
+    class prep:
+        patch_size: int = 224
+        stride: int = 224
+        downsample_factor: int = 1
+        min_tissue_coverage: float = 0.2
 
     @property
     def raw_dir(self) -> Path:
-        return DATA_ROOT / self.name / "raws"
+        return DATA_ROOT / "AgNor_OME" / "raws"
 
-    @property
-    def zip_dir(self) -> Path:
-        return DATA_ROOT / self.name / "zips"
+    def get_run_dir(self) -> Path:
+        _cov_str = f"{self.prep.min_tissue_coverage:.2f}".replace(".", "")
+        return (
+            CACHE_ROOT
+            / self.name
+            / f"s{self.prep.patch_size}_ds{self.prep.downsample_factor}_cov{_cov_str}"
+        )
 
     @property
     def split_path(self) -> Path:
-        path = PROJECT_ROOT / "splits" / f"splits_{self.name}.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
-
-    def get_train_index_path(self) -> Path:
-        path = self.get_run_dir() / "train.parquet"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
-
-    def get_test_index_path(self) -> Path:
-        path = self.get_run_dir() / "test.parquet"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
-
-    def get_run_dir(self) -> Path:
-        cov_str = f"{self.prep.min_tissue_coverage:.2f}".replace(".", "")
-        folder = f"s{self.prep.stride}_ds{self.prep.downsample_factor}_cov{cov_str}"
-        return CACHE_DIR / self.name / folder
-
-    def get_index_path(self) -> Path:
-        path = self.get_run_dir() / "index.parquet"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
+        return SPLITS_ROOT / f"splits_{self.name}.json"

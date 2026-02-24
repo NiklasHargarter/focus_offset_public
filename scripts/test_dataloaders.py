@@ -9,6 +9,10 @@ from src.datasets.zstack_ihc import (
     get_dataloaders as get_ihc_loaders,
     get_test_loader as get_ihc_test_loader,
 )
+from src.datasets.zstack_agnor import (
+    get_dataloaders as get_agnor_loaders,
+    get_test_loader as get_agnor_test_loader,
+)
 from src.datasets.jiang2018 import get_jiang2018_dataloaders
 
 
@@ -92,6 +96,20 @@ def main():
     except Exception as e:
         print("[SKIP] Jiang2018 failed to initialize: " + str(e))
         results["Jiang2018"] = False
+
+    # Test AgNor
+    try:
+        agnor_train, agnor_val = get_agnor_loaders(cfg)
+        results["ZStack AgNor [Train]"] = test_loader(
+            "ZStack AgNor [Train]", agnor_train
+        )
+        results["ZStack AgNor [Val]"] = test_loader("ZStack AgNor [Val]", agnor_val)
+
+        agnor_test = get_agnor_test_loader(cfg)
+        results["ZStack AgNor [Test]"] = test_loader("ZStack AgNor [Test]", agnor_test)
+    except Exception as e:
+        print("[SKIP] ZStack AgNor failed to initialize: " + str(e))
+        results["ZStack AgNor"] = False
 
     print("\n" + "=" * 30)
     print("      TEST SUMMARY")

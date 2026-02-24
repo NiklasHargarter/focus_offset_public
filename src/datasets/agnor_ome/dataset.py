@@ -4,12 +4,10 @@ from typing import Any
 
 import cv2
 import numpy as np
+import pandas as pd
 import tifffile
 import torch
 from torch.utils.data import Dataset
-
-from src.datasets.agnor_ome.config import AgNorOMEConfig
-import pandas as pd
 
 
 class OMEDataset(Dataset):
@@ -21,14 +19,18 @@ class OMEDataset(Dataset):
     def __init__(
         self,
         index_df: pd.DataFrame,
+        slide_dir: Path,
+        patch_size: int = 224,
+        downsample: int = 1,
         transform: Any | None = None,
-        dataset_name: str = "AgNor_OME",
+        dataset_name: str = "AgNor",
     ):
         self.df = index_df
+        self.slide_dir = Path(slide_dir)
+        self.patch_size = patch_size
+        self.downsample = downsample
         self.transform = transform
         self.dataset_name = dataset_name
-        self.patch_size = 224
-        self.downsample_factor = 1
 
         self._readers: dict[str, Any] | None = None
         self._owner_pid: int | None = None
@@ -36,28 +38,27 @@ class OMEDataset(Dataset):
     def __len__(self) -> int:
         return len(self.df)
 
-    def _get_reader(self, img_path_str: str):
+    def _get_reader(self, img_name: str):
         current_pid = os.getpid()
         if self._readers is None or self._owner_pid != current_pid:
             self._readers = {}
             self._owner_pid = current_pid
 
-        if img_path_str not in self._readers:
-            actual_path = Path(img_path_str)
-            if not actual_path.exists() and self.dataset_name:
-                raw_dir = AgNorOMEConfig().raw_dir
-                actual_path = raw_dir / actual_path.name
+        if img_name not in self._readers:
+            actual_path = self.slide_dir / img_name
+            if not actual_path.exists():
+                raise FileNotFoundError(f"Slide not found at {actual_path}")
 
             try:
                 # Store the TiffFile object
                 reader = tifffile.TiffFile(actual_path)
-                self._readers[img_path_str] = reader
+                self._readers[img_name] = reader
             except Exception as e:
                 raise RuntimeError(
                     f"Error opening OME-TIFF in process {current_pid}: {actual_path}. Error: {e}"
                 )
 
-        return self._readers[img_path_str]
+        return self._readers[img_name]
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         try:
@@ -93,7 +94,7 @@ class OMEDataset(Dataset):
             series = reader.series[z_level]
 
             # Crop raw patch, then resize to ViT output resolution
-            raw_extent = self.patch_size * self.downsample_factor
+            raw_extent = self.patch_size * self.downsample
 
             full_plane = series.asarray()
             block = full_plane[
@@ -135,3 +136,19 @@ class OMEDataset(Dataset):
             # x, y, z_level might not be bound if exception happens early
             print(f"Error reading index {idx}: {e}")
             raise
+
+
+def get_ome_dataset(
+    index_df: pd.DataFrame,
+    slide_dir: Path,
+    downsample: int,
+    patch_size: int = 224,
+    transform: Any = None,
+) -> OMEDataset:
+    return OMEDataset(
+        index_df=index_df,
+        slide_dir=slide_dir,
+        patch_size=patch_size,
+        downsample=downsample,
+        transform=transform,
+    )
