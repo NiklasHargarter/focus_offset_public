@@ -9,7 +9,10 @@ import slideio
 from tqdm import tqdm
 
 from src.datasets.zstack_he.config import ZStackHEConfig, PrepConfig
-from src.datasets.zstack_he.prep.preprocess import detect_tissue_mask, generate_tissue_patches
+from src.datasets.zstack_he.prep.preprocess import (
+    detect_tissue_mask,
+    generate_tissue_patches,
+)
 from src.utils.io_utils import suppress_stderr
 
 
@@ -30,7 +33,6 @@ def worker_estimate_slide(slide_path: Path, cfg: PrepConfig) -> tuple[int, int]:
             thumb_raw = scene.read_block(
                 rect=(0, 0, width, height), size=(d_w, d_h), slices=(mid_z, mid_z + 1)
             )
-        import cv2
         thumbnail = cv2.cvtColor(thumb_raw, cv2.COLOR_BGR2RGB)
         mask = detect_tissue_mask(thumbnail)
 
@@ -42,7 +44,7 @@ def worker_estimate_slide(slide_path: Path, cfg: PrepConfig) -> tuple[int, int]:
 
 
 def benchmark_dataset_size(dataset_name: str = "ZStack_HE", workers: int | None = None):
-    dataset_cfg = ZStackHEConfig(name=dataset_name)
+    dataset_cfg = ZStackHEConfig()
     raw_dir = dataset_cfg.raw_dir
     split_file = dataset_cfg.split_path
 
@@ -50,9 +52,11 @@ def benchmark_dataset_size(dataset_name: str = "ZStack_HE", workers: int | None 
 
     all_files = sorted(list(raw_dir.glob("*.vsi")))
 
-    print(f"Benchmarking dataset patches & estimating size for {dataset_name} ({len(all_files)} slides)")
+    print(
+        f"Benchmarking dataset patches & estimating size for {dataset_name} ({len(all_files)} slides)"
+    )
     print(f"Using {workers} workers.")
-    
+
     process_func = partial(
         worker_estimate_slide,
         cfg=dataset_cfg.prep,
@@ -60,25 +64,28 @@ def benchmark_dataset_size(dataset_name: str = "ZStack_HE", workers: int | None 
 
     total_patches = 0
     total_images = 0
-    
+
     start_time = time.time()
     ctx = mp.get_context("spawn")
     with ctx.Pool(workers) as pool:
         # use tqdm for progress bar
         results = list(tqdm(pool.imap(process_func, all_files), total=len(all_files)))
-        
+
     for slide_path, (count, num_z) in zip(all_files, results):
         # We don't print every slide if it's too many, but for debugging dataset size it's fine
         # print(f"{slide_path.name}: {count} patches")
         total_patches += count
-        total_images += (count * num_z)
-        
+        total_images += count * num_z
+
     elapsed = time.time() - start_time
 
     print(f"\n--- Benchmark Results ---")
     print(f"Execution Time: {elapsed:.2f} seconds")
-    print(f"Total valid patches (XY positions) across {len(all_files)} slides: {total_patches}")
+    print(
+        f"Total valid patches (XY positions) across {len(all_files)} slides: {total_patches}"
+    )
     print(f"Total individual crop images (Patches x Z-levels): {total_images}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     benchmark_dataset_size()

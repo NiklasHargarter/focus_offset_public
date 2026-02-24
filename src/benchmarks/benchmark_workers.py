@@ -29,7 +29,7 @@ def _worker(slide_path: Path, cfg) -> None:
 
 
 def benchmark_workers(dataset_name: str = "ZStack_HE", max_workers: int | None = None) -> None:
-    cfg = ZStackHEConfig(name=dataset_name)
+    cfg = ZStackHEConfig()
     all_files = sorted(cfg.raw_dir.glob("*.vsi"))
     if not all_files:
         print(f"No .vsi files found in {cfg.raw_dir}")

@@ -9,11 +9,14 @@ CACHE_DIR = PROJECT_ROOT / "cache"
 
 @dataclass
 class PrepConfig:
-    stride: int = 224
-    downsample_factor: int = 1
-    min_tissue_coverage: float = 0.80
+    downsample_factor: int = 2  # pyramid level 1 (30x); read 448px, resize to 224px
+    min_tissue_coverage: float = 0.30
     mask_downscale: int = 8
     patch_size: int = 224
+
+    @property
+    def stride(self) -> int:
+        return self.patch_size * self.downsample_factor
 
 
 @dataclass
@@ -48,7 +51,7 @@ class ZStackIHCConfig:
 
     def get_run_dir(self) -> Path:
         cov_str = f"{self.prep.min_tissue_coverage:.2f}".replace(".", "")
-        folder = f"s{self.prep.stride}_ds{self.prep.downsample_factor}_cov{cov_str}"
+        folder = f"ds{self.prep.downsample_factor}_cov{cov_str}"
         return CACHE_DIR / self.name / folder
 
     def get_index_path(self) -> Path:

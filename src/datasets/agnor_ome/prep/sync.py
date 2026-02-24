@@ -13,7 +13,7 @@ def sync(
     1. Preprocessing (generates Index Parquet table).
     """
     print(f"=== Syncing Dataset: {dataset_name} ===")
-    dataset_cfg = AgNorOMEConfig(name=dataset_name)
+    dataset_cfg = AgNorOMEConfig()
 
     if not skip_preprocess:
         index_path = dataset_cfg.get_index_path()

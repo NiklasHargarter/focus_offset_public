@@ -9,7 +9,7 @@ def create_split(
     seed: int = 42,
 ) -> None:
     """Generate image splits (test and train_pool) from master index."""
-    dataset_cfg = ZStackIHCConfig(name=dataset_name)
+    dataset_cfg = ZStackIHCConfig()
     split_file = dataset_cfg.split_path
     raw_dir = dataset_cfg.raw_dir
 

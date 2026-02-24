@@ -1,10 +1,10 @@
 """CLI for running prediction on a dataset using a checkpoint."""
 
 import argparse
+import importlib
 
-from src.config import TrainConfig
-from src.dataset.jiang2018 import get_jiang2018_dataloaders
-from src.dataset.loader import get_agnor_dataloader, get_holdout_dataloaders
+from src import config
+from src.models.architectures import MODEL_REGISTRY
 from src.prediction import evaluate
 from src.utils.env import setup_environment
 
@@ -14,36 +14,43 @@ def main():
         description="Run prediction on a dataset using a checkpoint.",
     )
     parser.add_argument(
-        "checkpoint", help="Path to .ckpt file or .pt (if created by this pipeline)."
+        "checkpoint", help="Path to .pt file (created by this pipeline)."
     )
     parser.add_argument("--output_dir", default=None, help="Override output dir")
-    parser.add_argument("--batch_size", type=int, default=TrainConfig().batch_size)
+    train_cfg = config.TrainConfig()
+    parser.add_argument("--batch_size", type=int, default=train_cfg.batch_size)
     parser.add_argument(
         "--dataset",
-        default="he",
-        choices=["he", "agnor", "jiang2018"],
+        default="zstack_he",
+        choices=["zstack_he", "zstack_ihc", "agnor_ome", "jiang2018"],
         help="Dataset to evaluate on.",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        choices=list(MODEL_REGISTRY.keys()),
+        help="Manually specify model architecture if not in checkpoint.",
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     setup_environment()
 
-    # Select DataLoader
-    if args.dataset == "he":
-        # For HE we use the validation set of the holdout split
-        # We discard the train loader
-        _, loader = get_holdout_dataloaders(
-            batch_size=args.batch_size,
-        )
-    elif args.dataset == "agnor":
-        loader = get_agnor_dataloader(
-            batch_size=args.batch_size,
-        )
+    # Dynamically select DataLoader based on dataset
+    train_cfg = config.TrainConfig(batch_size=args.batch_size)
+
+    if args.dataset in ["zstack_he", "zstack_ihc"]:
+        dataset_module = importlib.import_module(f"src.datasets.{args.dataset}.loader")
+        loader = dataset_module.get_test_loader(train_cfg=train_cfg)
+    elif args.dataset == "agnor_ome":
+        dataset_module = importlib.import_module(f"src.datasets.{args.dataset}.loader")
+        loader = dataset_module.get_dataloader(train_cfg=train_cfg)
     elif args.dataset == "jiang2018":
-        # For Jiang2018 we usually want the test set (combined same/diff protocol)
-        _, loader = get_jiang2018_dataloaders(
-            batch_size=args.batch_size,
+        dataset_module = importlib.import_module(f"src.datasets.{args.dataset}")
+        # Jiang2018 returns (train_loader, test_loader)
+        _, loader = dataset_module.get_jiang2018_dataloaders(
+            batch_size=args.batch_size, num_workers=train_cfg.num_workers
         )
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
@@ -54,6 +61,7 @@ def main():
         output_dir=args.output_dir,
         dry_run=args.dry_run,
         dataset_name=args.dataset,
+        model_name_override=args.model,
     )
 
 

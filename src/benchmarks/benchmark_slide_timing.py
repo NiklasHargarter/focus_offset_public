@@ -20,7 +20,7 @@ from src.datasets.zstack_he.prep.preprocess import process_slide
 
 
 def benchmark_slide_timing(dataset_name: str = "ZStack_HE", sample_size: int = 4) -> None:
-    cfg = ZStackHEConfig(name=dataset_name)
+    cfg = ZStackHEConfig()
     all_files = sorted(cfg.raw_dir.glob("*.vsi"))
     if not all_files:
         print(f"No .vsi files found in {cfg.raw_dir}")

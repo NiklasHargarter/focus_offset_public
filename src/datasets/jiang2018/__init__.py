@@ -177,7 +177,7 @@ class Jiang2018Dataset(Dataset):
 def download_and_extract_jiang2018():
     """Download and extract the Jiang2018 dataset."""
     dataset_name = "Jiang2018"
-    dataset_cfg = Jiang2018Config(name=dataset_name)
+    dataset_cfg = Jiang2018Config()
     zip_dir = dataset_cfg.zip_dir
 
     zip_dir.mkdir(parents=True, exist_ok=True)
@@ -220,7 +220,7 @@ def get_jiang2018_dataloaders(
     download_and_extract_jiang2018()
 
     dataset_name = "Jiang2018"
-    raw_dir = Jiang2018Config(name=dataset_name).raw_dir / "incoherent_RGBchannels"
+    raw_dir = Jiang2018Config().raw_dir / "incoherent_RGBchannels"
 
     val_transform = A.Compose(
         [

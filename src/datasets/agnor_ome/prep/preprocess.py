@@ -153,7 +153,7 @@ def preprocess_dataset(
     workers: int | None = None,
     dry_run: bool = False,
 ) -> None:
-    dataset_cfg = AgNorOMEConfig(name=dataset_name)
+    dataset_cfg = AgNorOMEConfig()
 
     raw_dir = dataset_cfg.raw_dir
     index_path = dataset_cfg.get_index_path()

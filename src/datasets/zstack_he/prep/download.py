@@ -59,7 +59,7 @@ def download_zstack_he(
     print(f"Fetching full image list for {dataset_name} from EXACT...")
     all_images = get_exact_image_list(dataset_name=dataset_name, force=False)
 
-    dataset_cfg = ZStackHEConfig(name=dataset_name)
+    dataset_cfg = ZStackHEConfig()
     zip_dir = dataset_cfg.zip_dir
     raw_dir = dataset_cfg.raw_dir
 

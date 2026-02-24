@@ -24,6 +24,7 @@ def evaluate(
     output_dir: str | Path | None = None,
     dry_run: bool = False,
     dataset_name: str = "unknown",
+    model_name_override: str | None = None,
 ) -> pd.DataFrame:
     """Run inference on the test set and save a predictions CSV.
 
@@ -72,8 +73,20 @@ def evaluate(
         print(f"Detected model architecture: {model_name}")
     else:
         state_dict = checkpoint
-        model_name = "multimodal"  # Fallback
-        print(f"Warning: Raw state dict found. assuming '{model_name}'.")
+        # Inference from path if not provided
+        if model_name_override:
+            model_name = model_name_override
+        elif "dwt" in str(checkpoint_path).lower():
+            model_name = "dwt"
+        elif "fft" in str(checkpoint_path).lower():
+            model_name = "fft"
+        elif "rgb" in str(checkpoint_path).lower():
+            model_name = "rgb"
+        else:
+            model_name = "multimodal"  # Fallback
+        print(
+            f"Warning: Raw state dict found. Assuming '{model_name}' based on path/override."
+        )
 
     # 3. Instantiate Model
     if model_name not in MODEL_REGISTRY:
@@ -127,14 +140,17 @@ def evaluate(
 
                 # Extract metadata for this sample
                 for key, val in meta.items():
+                    # Handle multi-element tensors (like tile_coords [R, C])
                     if isinstance(val, torch.Tensor):
-                        if val.dim() > 0:
+                        if val.dim() > 1 and val.size(1) > 1:
+                            # It's a batch of vectors, convert this sample's vector to list
+                            row[key] = val[i].tolist()
+                        elif val.dim() > 0:
                             row[key] = val[i].item()
                         else:
                             row[key] = val.item()
                     elif isinstance(val, list):
                         row[key] = val[i]
-                    # tuples etc
                     elif isinstance(val, tuple):
                         row[key] = val[i]
 

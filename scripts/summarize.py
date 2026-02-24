@@ -70,7 +70,7 @@ def print_summary(df: pd.DataFrame, title: str) -> None:
     if "dataset" in df.columns:
         is_jiang = df["dataset"].str.contains("Jiang2018", case=False).any()
 
-    if is_jiang and "tile_coords" in df.columns:
+    if is_jiang or "tile_coords" in df.columns:
         print(f"  [Protocol] Jiang2018 detected. Aggregating {len(df)} tiles...")
         df = aggregate_jiang_predictions(df)
 

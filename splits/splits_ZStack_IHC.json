@@ -1,19 +1,18 @@
 {
     "test": [
-        "002_1_IHC_stack.vsi",
-        "009_1_IHC_stack.vsi",
         "011_1_IHC_stack.vsi",
         "018_1_IHC_stack.vsi",
+        "040_1_IHC_stack.vsi"
+    ],
+    "train_pool": [
+        "002_1_IHC_stack.vsi",
+        "009_1_IHC_stack.vsi",
         "024_1_IHC_stack.vsi",
         "033_1_IHC_stack.vsi",
         "038_1_IHC_stack.vsi",
-        "040_1_IHC_stack.vsi",
         "041_1_IHC_stack.vsi",
         "045_1_IHC_stack.vsi"
     ],
-    "train_pool": [],
     "seed": 42,
-    "total_slides": 10,
-    "total_patches": 2600,
-    "total_samples": 70200
+    "total_slides": 10
 }

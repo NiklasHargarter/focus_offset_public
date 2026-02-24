@@ -1,11 +1,14 @@
 import matplotlib
+import sys
+from pathlib import Path
 
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import cv2
-from src.dataset.jiang2018 import Jiang2018Dataset
+from src.datasets.jiang2018 import Jiang2018Dataset
 
 
 def denormalize(tensor):
@@ -46,11 +49,11 @@ def main():
     sns.set_theme(style="white")
 
     print("Loading datasets...")
-    from src import config
+    from src.datasets.jiang2018.config import Jiang2018Config
     import albumentations as A
     from albumentations.pytorch import ToTensorV2
 
-    raw_dir = config.get_vsi_raw_dir("Jiang2018") / "incoherent_RGBchannels"
+    raw_dir = Jiang2018Config().raw_dir / "incoherent_RGBchannels"
     val_transform = A.Compose([A.ToFloat(max_value=255.0), ToTensorV2()])
 
     train_ds = Jiang2018Dataset(raw_dir, split="train", transform=val_transform)

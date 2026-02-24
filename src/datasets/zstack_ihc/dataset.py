@@ -7,11 +7,8 @@ import slideio
 import torch
 from torch.utils.data import Dataset
 
-from src.datasets.zstack_ihc.config import ZStackIHCConfig
+from src.datasets.zstack_ihc.config import ZStackIHCConfig, PrepConfig
 from src.utils.io_utils import suppress_stderr
-
-
-
 
 
 class VSIDataset(Dataset):
@@ -25,13 +22,15 @@ class VSIDataset(Dataset):
         self,
         index_df: pd.DataFrame,
         transform: Any | None = None,
-        dataset_name: str = "ZStack_IHC"
+        dataset_name: str = "ZStack_IHC",
+        prep_cfg: PrepConfig | None = None,
     ):
         self.df = index_df
         self.transform = transform
         self.dataset_name = dataset_name
-        self.patch_size = 224
-        self.downsample_factor = 1
+        prep_cfg = prep_cfg or PrepConfig()
+        self.patch_size = prep_cfg.patch_size
+        self.downsample_factor = prep_cfg.downsample_factor
 
         self._slides: dict[str, Any] | None = None
         self._owner_pid: int | None = None
@@ -52,7 +51,7 @@ class VSIDataset(Dataset):
         if vsi_path not in self._slides:
             actual_path = Path(vsi_path)
             if not actual_path.exists() and self.dataset_name:
-                raw_dir = ZStackIHCConfig(name=self.dataset_name).raw_dir
+                raw_dir = ZStackIHCConfig().raw_dir
                 actual_path = raw_dir / actual_path.name
 
             try:
@@ -73,24 +72,15 @@ class VSIDataset(Dataset):
         """
         try:
             row = self.df.iloc[idx]
-            vsi_name = row['slide_name']
-            x = row['x']
-            y = row['y']
-            z_level = row['z_level']
-            best_z = row['optimal_z']
-            num_z = row['num_z']
+            vsi_name = row["slide_name"]
+            x = row["x"]
+            y = row["y"]
+            z_level = row["z_level"]
+            best_z = row["optimal_z"]
+            num_z = row["num_z"]
+            z_offset = float(row["z_offset_microns"])
 
             scene = self._get_scene(vsi_name)
-
-            # Calculate focus offset in microns (Target for the regression model)
-            z_res = getattr(scene, "z_resolution", 0)
-            if not z_res:
-                raise RuntimeError(
-                    f"Slide {vsi_name} from {self.dataset_name} has no Z-resolution metadata. "
-                    "Physical micron-based focus offset cannot be calculated."
-                )
-            z_res_microns = z_res * 1e6
-            z_offset = (best_z - z_level) * z_res_microns
 
             raw_extent = self.patch_size * self.downsample_factor
             rect = (

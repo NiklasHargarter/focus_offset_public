@@ -48,7 +48,7 @@ class OMEDataset(Dataset):
         if img_path_str not in self._readers:
             actual_path = Path(img_path_str)
             if not actual_path.exists() and self.dataset_name:
-                raw_dir = AgNorOMEConfig(name=self.dataset_name).raw_dir
+                raw_dir = AgNorOMEConfig().raw_dir
                 actual_path = raw_dir / actual_path.name
 
             try:

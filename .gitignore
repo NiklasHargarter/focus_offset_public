@@ -23,3 +23,18 @@ logs/
 
 # System
 .DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Tool Caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Additional Logs & Outputs
+logs_*/
+*.log

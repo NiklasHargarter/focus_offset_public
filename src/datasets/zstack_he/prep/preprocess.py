@@ -39,8 +39,8 @@ def generate_tissue_patches(
     height: int,
     cfg: PrepConfig,
     mask: np.ndarray,
-) -> list[tuple[int, int]]:
-    """Return all (x, y) patch positions that meet the tissue coverage threshold."""
+) -> list[tuple[int, int, float]]:
+    """Return (x, y, tissue_coverage) for patches meeting the tissue coverage threshold."""
     patch_size = cfg.patch_size * cfg.downsample_factor
     xs = range(0, width - patch_size + 1, cfg.stride)
     ys = range(0, height - patch_size + 1, cfg.stride)
@@ -49,14 +49,18 @@ def generate_tissue_patches(
     mh = max(1, patch_size // cfg.mask_downscale)
     binary = mask > 0
 
-    return [
-        (x, y)
-        for y in ys
-        for x in xs
-        if (patch := binary[y // cfg.mask_downscale : y // cfg.mask_downscale + mh,
-                            x // cfg.mask_downscale : x // cfg.mask_downscale + mw]).size > 0
-        and patch.mean() >= cfg.min_tissue_coverage
-    ]
+    results = []
+    for y in ys:
+        for x in xs:
+            patch = binary[
+                y // cfg.mask_downscale : y // cfg.mask_downscale + mh,
+                x // cfg.mask_downscale : x // cfg.mask_downscale + mw,
+            ]
+            if patch.size > 0:
+                coverage = float(patch.mean())
+                if coverage >= cfg.min_tissue_coverage:
+                    results.append((x, y, coverage))
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +68,9 @@ def generate_tissue_patches(
 # ---------------------------------------------------------------------------
 
 
-def process_slide(slide_path: Path, cfg: PrepConfig, dry_run: bool = False) -> list[dict]:
+def process_slide(
+    slide_path: Path, cfg: PrepConfig, dry_run: bool = False
+) -> list[dict]:
     """Full single-slide pipeline: open → thumbnail → mask → patches → focus → rows."""
     raw_extent = cfg.patch_size * cfg.downsample_factor
 
@@ -72,7 +78,16 @@ def process_slide(slide_path: Path, cfg: PrepConfig, dry_run: bool = False) -> l
         slide = slideio.open_slide(str(slide_path), "VSI")
     scene = slide.get_scene(0)
     width, height = scene.size
-    num_z = scene.num_z_slices
+    num_z: int = scene.num_z_slices
+
+    # Z-resolution in microns (slide-level constant)
+    z_res = getattr(scene, "z_resolution", 0)
+    if not z_res:
+        raise RuntimeError(
+            f"Slide {slide_path.name} has no Z-resolution metadata. "
+            "Cannot compute physical focus offsets."
+        )
+    z_res_microns = z_res * 1e6
 
     # Tissue mask from middle Z-level (most likely to be in focus)
     mid_z = num_z // 2
@@ -96,9 +111,10 @@ def process_slide(slide_path: Path, cfg: PrepConfig, dry_run: bool = False) -> l
         random.shuffle(candidates)
         candidates = candidates[:20]
 
-    # Find sharpest Z-level per patch
+    # Compute focus scores and find sharpest Z-level per patch
+    all_scores: list[list[float]] = []
     best_zs = np.zeros(len(candidates), dtype=np.int32)
-    for i, (x, y) in enumerate(candidates):
+    for i, (x, y, _cov) in enumerate(candidates):
         if i % 100 == 0:
             print(f"[{slide_path.name}] focus {i}/{len(candidates)}")
         with suppress_stderr():
@@ -109,13 +125,29 @@ def process_slide(slide_path: Path, cfg: PrepConfig, dry_run: bool = False) -> l
             )
         if z_stack.ndim == 3:
             z_stack = z_stack[np.newaxis]
-        best_zs[i] = int(np.argmax([compute_focus_score(z_stack[z]) for z in range(num_z)]))
+        scores = [float(compute_focus_score(z_stack[z])) for z in range(num_z)]
+        all_scores.append(scores)
+        best_zs[i] = int(np.argmax(scores))
 
-    # Build output rows
+    best_z_list: list[int] = best_zs.tolist()
+
+    # Build output rows — all labels precomputed
     return [
-        {"slide_name": slide_path.name, "x": int(x), "y": int(y),
-         "z_level": int(z), "optimal_z": int(best_z), "num_z": int(num_z)}
-        for (x, y), best_z in zip(candidates, best_zs)
+        {
+            "slide_name": slide_path.name,
+            "x": x,
+            "y": y,
+            "z_level": z,
+            "optimal_z": best_z,
+            "num_z": num_z,
+            "z_res_microns": z_res_microns,
+            "z_offset_microns": (best_z - z) * z_res_microns,
+            "focus_score": scores[z],
+            "max_focus_score": max(scores),
+            "focus_score_range": max(scores) - min(scores),
+            "tissue_coverage": cov,
+        }
+        for (x, y, cov), best_z, scores in zip(candidates, best_z_list, all_scores)
         for z in range(num_z)
     ]
 
@@ -129,7 +161,9 @@ def _process_slide_worker(slide_path: Path, cfg: PrepConfig, dry_run: bool):
     return process_slide(slide_path, cfg, dry_run)
 
 
-def _run_split(pool: Pool, files: list[Path], process_func, out_path: Path, label: str) -> None:
+def _run_split(
+    pool: Pool, files: list[Path], process_func, out_path: Path, label: str
+) -> None:
     """Process a list of slides in parallel and save the result as parquet."""
     if not files:
         return
@@ -146,7 +180,7 @@ def preprocess_dataset(
     exclude: str = "_all_",
     dry_run: bool = False,
 ) -> None:
-    cfg = ZStackHEConfig(name=dataset_name)
+    cfg = ZStackHEConfig()
     workers = workers or os.cpu_count() or 1
 
     if not cfg.split_path.exists():
@@ -166,7 +200,9 @@ def preprocess_dataset(
     train_files = [f for f in all_files if f.name in train_names]
     test_files = [f for f in all_files if f.name in test_names]
 
-    print(f"Preprocessing {dataset_name} | stride={cfg.prep.stride} patch={cfg.prep.patch_size}")
+    print(
+        f"Preprocessing {dataset_name} | stride={cfg.prep.stride} patch={cfg.prep.patch_size}"
+    )
     print(f"Train: {len(train_files)} slides  Test: {len(test_files)} slides")
 
     process_func = partial(_process_slide_worker, cfg=cfg.prep, dry_run=dry_run)

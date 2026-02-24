@@ -74,7 +74,7 @@ def cleanup_corrupt_vsi(vsi_path: Path, zip_source: Path, extract_target: Path) 
 
 def fix_zip_structure(dataset_name: str = "ZStack_HE") -> None:
     """Extract and verify all VSI zips."""
-    dataset_cfg = ZStackHEConfig(name=dataset_name)
+    dataset_cfg = ZStackHEConfig()
     zip_source = dataset_cfg.zip_dir
     extract_target = dataset_cfg.raw_dir
 

@@ -28,4 +28,46 @@ A fully deterministic script that reads the available valid `.vsi` slides and se
 
 ## `preprocess.py`
 **The Metadata Compiler.**
-Scans the valid slides dictated by the JSON splits, detects valid tissue regions using classical filtering, determines optimal Z-slices dynamically via Brenner Gradients, and outputs discrete rows containing purely integers mapping global paths to coordinates. Finally, these row mappings are dumped directly into highly efficient Pandas Parquet tables (`train.parquet` / `test.parquet`).
+
+Scans the valid slides dictated by the JSON splits, detects valid tissue regions using classical filtering, determines optimal Z-slices dynamically via Variance of Laplacian, and outputs discrete rows into highly efficient Pandas Parquet tables (`train.parquet` / `test.parquet`). All labels and quality metrics are computed at preprocessing time — training never reopens VSI files for anything other than pixel data.
+
+### Configuration (`PrepConfig`)
+
+| Parameter | Default | Description |
+|---|---|---|
+| `patch_size` | `224` | Model input size in pixels |
+| `downsample_factor` | `2` | Read pyramid level (2 = 30× magnification; reads 448 px, downscales to 224 px) |
+| `stride` | `patch_size × downsample_factor` | Step between patch origins — derived, always non-overlapping |
+| `min_tissue_coverage` | `0.80` | Minimum tissue fraction to include a patch |
+| `mask_downscale` | `8` | Downscale factor used when building the tissue mask thumbnail |
+
+The output cache directory is named `ds{downsample_factor}_cov{min_tissue_coverage}/` so any parameter change produces a fresh, non-conflicting cache automatically.
+
+### Per-Slide Pipeline
+
+1. **Open slide** — load via `slideio` (scene 0); `read_block` handles on-the-fly downscaling from the full-resolution pyramid.
+2. **Z-metadata** — read `z_resolution` once per slide; raise early if missing (required for physical label computation).
+3. **Tissue mask** — read a small thumbnail at the middle Z-level (`width / mask_downscale`), apply Otsu thresholding via `histolab` to produce a binary tissue mask.
+4. **Patch grid** — slide a `(patch_size × downsample_factor)²` window across the slide at `stride` intervals; retain only patches where the tissue mask covers ≥ `min_tissue_coverage`. The exact coverage float is recorded.
+5. **Focus scoring** — for each candidate patch, read the full Z-stack (native `448×448`, downscaled to `224×224` by slideio) and compute a Variance of Laplacian focus score for every Z-slice.
+6. **Label computation** — find the sharpest Z (`optimal_z` = argmax of focus scores), then for every Z-slice compute the regression target: `z_offset_microns = (optimal_z − z_level) × z_res_microns`.
+7. **Write parquet** — emit one row per `(patch, z_level)` pair with all metadata, labels, and quality metrics pre-baked.
+
+### Parquet Schema
+
+Each row represents one `(slide, patch position, z-slice)` triplet:
+
+| Column | Type | Description |
+|---|---|---|
+| `slide_name` | str | VSI filename |
+| `x`, `y` | int | Patch top-left in full-resolution pixel coordinates |
+| `z_level` | int | Z-slice index this row represents |
+| `optimal_z` | int | Sharpest Z-slice index for this patch |
+| `num_z` | int | Total Z-slices in the slide |
+| `z_res_microns` | float | Physical Z step size in microns |
+| `z_offset_microns` | float | **Regression target**: `(optimal_z − z_level) × z_res_microns` |
+| `focus_score` | float | Variance of Laplacian sharpness score at this `z_level` |
+| `max_focus_score` | float | Peak sharpness score across all Z for this patch |
+| `focus_score_range` | float | `max − min` focus score — low = flat z-stack, uninformative for training |
+| `tissue_coverage` | float | Actual tissue fraction in the patch mask region |
+

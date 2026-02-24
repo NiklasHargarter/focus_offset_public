@@ -1,4 +1,4 @@
-
+import random
 from typing import Literal
 
 import albumentations as A
@@ -57,9 +57,6 @@ def _load_train_df(
     return df
 
 
-
-
-
 def get_dataloaders(
     train_cfg: TrainConfig,
     val_ratio: float = 0.1,
@@ -67,23 +64,25 @@ def get_dataloaders(
 ):
     dataset_cfg = ZStackIHCConfig()
     train_pool_df = _load_train_df(dataset_cfg)
-    
-    import random
-    train_pool = list(train_pool_df['slide_name'].unique())
+
+    train_pool = sorted(list(train_pool_df["slide_name"].unique()))
 
     random.seed(seed)
     random.shuffle(train_pool)
 
-    num_val = int(len(train_pool) * val_ratio)
+    # Use at least 1 slide for validation if possible
+    num_val = max(1, int(len(train_pool) * val_ratio)) if len(train_pool) > 1 else 0
     val_files = train_pool[:num_val]
     train_files = train_pool[num_val:]
 
-    train_index = train_pool_df[train_pool_df['slide_name'].isin(train_files)].reset_index(drop=True)
-    val_index = train_pool_df[train_pool_df['slide_name'].isin(val_files)].reset_index(drop=True)
-
-    train_dataset = VSIDataset(
-        index_df=train_index, transform=get_transforms("train")
+    train_index = train_pool_df[
+        train_pool_df["slide_name"].isin(train_files)
+    ].reset_index(drop=True)
+    val_index = train_pool_df[train_pool_df["slide_name"].isin(val_files)].reset_index(
+        drop=True
     )
+
+    train_dataset = VSIDataset(index_df=train_index, transform=get_transforms("train"))
     val_dataset = VSIDataset(index_df=val_index, transform=get_transforms("val"))
 
     print(
@@ -110,3 +109,31 @@ def get_dataloaders(
     )
 
     return train_loader, val_loader
+
+
+def get_test_loader(
+    train_cfg: TrainConfig,
+):
+    dataset_cfg = ZStackIHCConfig()
+    test_path = dataset_cfg.get_test_index_path()
+
+    if not test_path.exists():
+        raise RuntimeError(
+            f"Missing test data for {dataset_cfg.name}. Run prepare_data first."
+        )
+
+    test_df = pd.read_parquet(test_path)
+    test_dataset = VSIDataset(index_df=test_df, transform=get_transforms("val"))
+
+    print(f"Data Setup [{dataset_cfg.name} TEST]: {len(test_dataset)} samples.")
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=train_cfg.batch_size,
+        shuffle=False,
+        num_workers=train_cfg.num_workers,
+        persistent_workers=train_cfg.num_workers > 0,
+        pin_memory=torch.cuda.is_available(),
+    )
+
+    return test_loader
