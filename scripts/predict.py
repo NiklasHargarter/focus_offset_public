@@ -41,10 +41,10 @@ def main():
     train_cfg = config.TrainConfig(batch_size=args.batch_size)
 
     if args.dataset in ["zstack_he", "zstack_ihc"]:
-        dataset_module = importlib.import_module(f"src.datasets.{args.dataset}.loader")
+        dataset_module = importlib.import_module(f"src.datasets.{args.dataset}")
         loader = dataset_module.get_test_loader(train_cfg=train_cfg)
     elif args.dataset == "agnor_ome":
-        dataset_module = importlib.import_module(f"src.datasets.{args.dataset}.loader")
+        dataset_module = importlib.import_module(f"src.datasets.{args.dataset}")
         loader = dataset_module.get_dataloader(train_cfg=train_cfg)
     elif args.dataset == "jiang2018":
         dataset_module = importlib.import_module(f"src.datasets.{args.dataset}")

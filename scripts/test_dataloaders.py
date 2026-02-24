@@ -1,16 +1,11 @@
-import sys
 import torch
-from pathlib import Path
-
-# Add src to path if needed
-sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from src.config import TrainConfig
-from src.datasets.zstack_he.loader import (
+from src.datasets.zstack_he import (
     get_dataloaders as get_he_loaders,
     get_test_loader as get_he_test_loader,
 )
-from src.datasets.zstack_ihc.loader import (
+from src.datasets.zstack_ihc import (
     get_dataloaders as get_ihc_loaders,
     get_test_loader as get_ihc_test_loader,
 )
@@ -51,7 +46,7 @@ def test_loader(name, loader):
             print(f"  [WARN] Unexpected image shape: {images.shape}")
 
         if not isinstance(targets, torch.Tensor):
-            print(f"  [FAIL] Target is not a tensor")
+            print("  [FAIL] Target is not a tensor")
             return False
 
         return True

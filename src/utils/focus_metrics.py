@@ -6,7 +6,7 @@ def compute_focus_score(image: np.ndarray) -> float:
     """
     Compute Focus Score using the Variance of Laplacian metric.
 
-    This is a fast, robust, and industry-standard method for measuring 
+    This is a fast, robust, and industry-standard method for measuring
     image sharpness/focus. Returns a higher score for sharper images.
     """
     if image.size == 0:

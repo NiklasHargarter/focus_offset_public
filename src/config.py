@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", Path.home()))
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data/niklas"))
 CACHE_DIR = PROJECT_ROOT / "cache"
 
 

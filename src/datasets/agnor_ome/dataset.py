@@ -12,9 +12,6 @@ from src.datasets.agnor_ome.config import AgNorOMEConfig
 import pandas as pd
 
 
-
-
-
 class OMEDataset(Dataset):
     """
     Worker-safe Dataset for OME-TIFF patches.
@@ -25,7 +22,7 @@ class OMEDataset(Dataset):
         self,
         index_df: pd.DataFrame,
         transform: Any | None = None,
-        dataset_name: str = "AgNor_OME"
+        dataset_name: str = "AgNor_OME",
     ):
         self.df = index_df
         self.transform = transform
@@ -65,12 +62,12 @@ class OMEDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, Any]:
         try:
             row = self.df.iloc[idx]
-            img_name = row['slide_name']
-            x = row['x']
-            y = row['y']
-            z_level = row['z_level']
-            best_z = row['optimal_z']
-            num_z = row['num_z']
+            img_name = row["slide_name"]
+            x = row["x"]
+            y = row["y"]
+            z_level = row["z_level"]
+            best_z = row["optimal_z"]
+            num_z = row["num_z"]
 
             reader = self._get_reader(img_name)
 
@@ -78,11 +75,12 @@ class OMEDataset(Dataset):
             try:
                 ome_metadata = reader.ome_metadata
                 import xml.etree.ElementTree as ET
+
                 root = ET.fromstring(ome_metadata)
-                ns = {'ome': 'http://www.openmicroscopy.org/Schemas/OME/2016-06'}
-                pixels = root.find('.//ome:Pixels', ns)
-                if pixels is not None and 'PhysicalSizeZ' in pixels.attrib:
-                    z_res_microns = float(pixels.attrib['PhysicalSizeZ'])
+                ns = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
+                pixels = root.find(".//ome:Pixels", ns)
+                if pixels is not None and "PhysicalSizeZ" in pixels.attrib:
+                    z_res_microns = float(pixels.attrib["PhysicalSizeZ"])
                 else:
                     z_res_microns = 1.0  # Fallback
             except Exception:

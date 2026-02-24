@@ -3,6 +3,7 @@ import argparse
 from src.datasets.agnor_ome.config import AgNorOMEConfig
 from .preprocess import preprocess_dataset
 
+
 def sync(
     dataset_name: str = "AgNor_OME",
     skip_preprocess: bool = False,
@@ -29,6 +30,7 @@ def sync(
         print("\n[Step 1] Skipping Preprocessing.")
 
     print(f"\n=== Sync for {dataset_name} complete ===")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

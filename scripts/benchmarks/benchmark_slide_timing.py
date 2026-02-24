@@ -11,19 +11,25 @@ Usage:
 
 import time
 from functools import partial
-from pathlib import Path
-
 from tqdm import tqdm
 
-from src.datasets.zstack_he.config import ZStackHEConfig
-from src.datasets.zstack_he.prep.preprocess import process_slide
+from src.datasets.zstack_he import (
+    SLIDE_DIR,
+    DOWNSAMPLE,
+    PATCH_SIZE,
+    EXCLUDE_PATTERN,
+    COV,
+    STRIDE,
+)
+from src.datasets.vsi.prep.preprocess import process_vsi_slide
 
 
-def benchmark_slide_timing(dataset_name: str = "ZStack_HE", sample_size: int = 4) -> None:
-    cfg = ZStackHEConfig()
-    all_files = sorted(cfg.raw_dir.glob("*.vsi"))
+def benchmark_slide_timing(
+    dataset_name: str = "ZStack_HE", sample_size: int = 4
+) -> None:
+    all_files = sorted(SLIDE_DIR.glob("*.vsi"))
     if not all_files:
-        print(f"No .vsi files found in {cfg.raw_dir}")
+        print(f"No .vsi files found in {SLIDE_DIR}")
         return
 
     sample = all_files[:sample_size]
@@ -31,7 +37,15 @@ def benchmark_slide_timing(dataset_name: str = "ZStack_HE", sample_size: int = 4
     print(f"Sample    : {len(sample)} slides, full focus search")
     print()
 
-    func = partial(process_slide, cfg=cfg.prep, dry_run=False)
+    params = {
+        "downsample": DOWNSAMPLE,
+        "cov": COV,
+        "patch_size": PATCH_SIZE,
+        "stride": STRIDE,
+        "exclude_pattern": EXCLUDE_PATTERN,
+    }
+
+    func = partial(process_vsi_slide, params=params, dry_run=False)
     slide_times: list[float] = []
     for s in tqdm(sample):
         t0 = time.perf_counter()
@@ -42,13 +56,18 @@ def benchmark_slide_timing(dataset_name: str = "ZStack_HE", sample_size: int = 4
     total_est = avg * len(all_files)
 
     print()
-    print(f"Per-slide : avg {avg:.1f}s  min {min(slide_times):.1f}s  max {max(slide_times):.1f}s")
-    print(f"Estimated total runtime: {total_est / 60:.1f} min  "
-          f"(range {total_est * 0.8 / 60:.1f}–{total_est * 1.5 / 60:.1f} min)")
+    print(
+        f"Per-slide : avg {avg:.1f}s  min {min(slide_times):.1f}s  max {max(slide_times):.1f}s"
+    )
+    print(
+        f"Estimated total runtime: {total_est / 60:.1f} min  "
+        f"(range {total_est * 0.8 / 60:.1f}–{total_est * 1.5 / 60:.1f} min)"
+    )
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="ZStack_HE")
     parser.add_argument("--sample-size", type=int, default=4)

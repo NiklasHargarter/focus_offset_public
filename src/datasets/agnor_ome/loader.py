@@ -22,13 +22,15 @@ def get_transforms(mode: Literal["train", "val"]):
 
 def _load_ag_nor_test_df(dataset_cfg: AgNorOMEConfig) -> pd.DataFrame:
     # AgNor is primarily for evaluation, meaning we only care about the testing split.
-    # If the user ran create_split, they have a test.parquet. Wait, preprocess wasn't updated to build test.parquet yet! 
+    # If the user ran create_split, they have a test.parquet. Wait, preprocess wasn't updated to build test.parquet yet!
     # Let's just load index.parquet and filter by JSON if needed, or if json isn't present, use the whole thing.
     index_path = dataset_cfg.get_index_path()
     split_path = dataset_cfg.split_path
 
     if not index_path.exists():
-        raise RuntimeError(f"Missing data for {dataset_cfg.name}. Run prepare_data first.")
+        raise RuntimeError(
+            f"Missing data for {dataset_cfg.name}. Run prepare_data first."
+        )
 
     df = pd.read_parquet(index_path)
 
@@ -37,9 +39,10 @@ def _load_ag_nor_test_df(dataset_cfg: AgNorOMEConfig) -> pd.DataFrame:
             splits = json.load(f)
         test_files = splits.get("test", [])
         if test_files:
-            df = df[df['slide_name'].isin(test_files)].reset_index(drop=True)
+            df = df[df["slide_name"].isin(test_files)].reset_index(drop=True)
 
     return df
+
 
 def get_dataloader(
     train_cfg: TrainConfig,

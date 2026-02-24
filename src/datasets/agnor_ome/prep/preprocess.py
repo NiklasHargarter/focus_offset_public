@@ -14,8 +14,11 @@ from src.utils.focus_metrics import compute_brenner_gradient
 
 import pandas as pd
 
+
 class PreprocessConfig:
-    def __init__(self, patch_size, stride, downsample_factor, min_tissue_coverage, dataset_name):
+    def __init__(
+        self, patch_size, stride, downsample_factor, min_tissue_coverage, dataset_name
+    ):
         self.patch_size = patch_size
         self.stride = stride
         self.downsample_factor = downsample_factor
@@ -125,18 +128,20 @@ def process_image(
         reader, candidates, raw_extent, cfg.patch_size, num_z
     )
     reader.close()
-    
+
     rows = []
     for (x, y), best_z in zip(candidates, best_zs):
         for z in range(num_z):
-            rows.append({
-                "slide_name": img_path.name,
-                "x": int(x),
-                "y": int(y),
-                "z_level": int(z),
-                "optimal_z": int(best_z),
-                "num_z": int(num_z),
-            })
+            rows.append(
+                {
+                    "slide_name": img_path.name,
+                    "x": int(x),
+                    "y": int(y),
+                    "z_level": int(z),
+                    "optimal_z": int(best_z),
+                    "num_z": int(num_z),
+                }
+            )
     return rows
 
 
@@ -174,9 +179,7 @@ def preprocess_dataset(
     if dry_run:
         all_files = all_files[:10]
 
-    print(
-        f"Preprocessing OME-TIFF {dataset_name} (Total: {len(all_files)})"
-    )
+    print(f"Preprocessing OME-TIFF {dataset_name} (Total: {len(all_files)})")
 
     if all_files:
         with multiprocessing.Pool(workers) as pool:
@@ -189,9 +192,8 @@ def preprocess_dataset(
             for result_rows in pool.imap_unordered(process_func, all_files):
                 if result_rows:
                     all_rows.extend(result_rows)
-            
+
             if all_rows:
                 df = pd.DataFrame(all_rows)
                 df.to_parquet(index_path)
                 print(f"  [EXPORT] Consolidated parquet index saved to {index_path}")
-

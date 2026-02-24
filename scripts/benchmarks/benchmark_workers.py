@@ -12,46 +12,72 @@ Usage:
     uv run python -m src.benchmarks.benchmark_workers [--max-workers N]
 """
 
-import os
 import time
+import os
 from functools import partial
 import multiprocessing as mp
 from pathlib import Path
 
 from tqdm import tqdm
 
-from src.datasets.zstack_he.config import ZStackHEConfig
-from src.datasets.zstack_he.prep.preprocess import process_slide
+from src.datasets.zstack_he import (
+    SLIDE_DIR,
+    DOWNSAMPLE,
+    PATCH_SIZE,
+    EXCLUDE_PATTERN,
+    COV,
+    STRIDE,
+)
+from src.datasets.vsi.prep.preprocess import process_vsi_slide
 
 
-def _worker(slide_path: Path, cfg) -> None:
-    process_slide(slide_path, cfg, dry_run=True)
+def _worker(slide_path: Path, params: dict) -> None:
+    process_vsi_slide(slide_path, params, dry_run=True)
 
 
-def benchmark_workers(dataset_name: str = "ZStack_HE", max_workers: int | None = None) -> None:
-    cfg = ZStackHEConfig()
-    all_files = sorted(cfg.raw_dir.glob("*.vsi"))
+def benchmark_workers(
+    dataset_name: str = "ZStack_HE", max_workers: int | None = None
+) -> None:
+    all_files = sorted(SLIDE_DIR.glob("*.vsi"))
     if not all_files:
-        print(f"No .vsi files found in {cfg.raw_dir}")
+        print(f"No .vsi files found in {SLIDE_DIR}")
         return
 
     n_cpu = os.cpu_count() or 1
     max_workers = max_workers or n_cpu
-    candidates = sorted({4, *[2**i for i in range(3, 8) if 2**i <= max_workers], max_workers})
+    candidates = sorted(
+        {4, *[2**i for i in range(3, 8) if 2**i <= max_workers], max_workers}
+    )
 
-    print(f"Dataset  : {dataset_name} ({len(all_files)} slides, dry_run=20 patches each)")
+    print(
+        f"Dataset  : {dataset_name} ({len(all_files)} slides, dry_run=20 patches each)"
+    )
     print(f"CPUs     : {n_cpu}  |  sweeping workers: {candidates}")
     print()
 
+    params = {
+        "downsample": DOWNSAMPLE,
+        "cov": COV,
+        "patch_size": PATCH_SIZE,
+        "stride": STRIDE,
+        "exclude_pattern": EXCLUDE_PATTERN,
+    }
+
     ctx = mp.get_context("spawn")
-    func = partial(_worker, cfg=cfg.prep)
+    func = partial(_worker, params=params)
     results: dict[int, float] = {}
 
     for n_workers in candidates:
         t0 = time.perf_counter()
         with ctx.Pool(n_workers) as pool:
-            list(tqdm(pool.imap(func, all_files), total=len(all_files),
-                      desc=f"workers={n_workers:2d}", leave=False))
+            list(
+                tqdm(
+                    pool.imap(func, all_files),
+                    total=len(all_files),
+                    desc=f"workers={n_workers:2d}",
+                    leave=False,
+                )
+            )
         elapsed = time.perf_counter() - t0
         throughput = len(all_files) / elapsed
         results[n_workers] = throughput
@@ -64,6 +90,7 @@ def benchmark_workers(dataset_name: str = "ZStack_HE", max_workers: int | None =
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="ZStack_HE")
     parser.add_argument("--max-workers", type=int, default=None)

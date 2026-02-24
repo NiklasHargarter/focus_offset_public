@@ -26,12 +26,10 @@ def get_unbinned_patch(dataset, idx):
     img = cv2.imread(str(path))
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # Get coordinates of the tile
-    r, c = sample["tile_coords"]
-
-    # In binned space (1024x1224), the tile starts at:
-    y_binned = r * 224
-    x_binned = c * 224
+    # Get coordinates of the tile directly from x and y metadata
+    metadata = dataset[idx]["metadata"]
+    x_binned = metadata["x"]
+    y_binned = metadata["y"]
 
     # In unbinned space (2048x2448), this corresponds to:
     y_orig = y_binned * 2

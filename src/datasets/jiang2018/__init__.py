@@ -167,16 +167,19 @@ class Jiang2018Dataset(Dataset):
                 "location": sample["location"],
                 "seg_id": sample["seg_id"] if sample["seg_id"] is not None else -1,
                 "defocus_nm": sample["defocus_nm"],
+                "x": 0,
+                "y": 0,
             },
         }
         if "tile_coords" in sample:
-            res["metadata"]["tile_coords"] = torch.tensor(sample["tile_coords"])
+            r, c = sample["tile_coords"]
+            res["metadata"]["x"] = c * 224
+            res["metadata"]["y"] = r * 224
         return res
 
 
 def download_and_extract_jiang2018():
     """Download and extract the Jiang2018 dataset."""
-    dataset_name = "Jiang2018"
     dataset_cfg = Jiang2018Config()
     zip_dir = dataset_cfg.zip_dir
 
@@ -218,8 +221,6 @@ def get_jiang2018_dataloaders(
     """Get train and test dataloaders for Jiang2018."""
     # Ensure data is ready
     download_and_extract_jiang2018()
-
-    dataset_name = "Jiang2018"
     raw_dir = Jiang2018Config().raw_dir / "incoherent_RGBchannels"
 
     val_transform = A.Compose(

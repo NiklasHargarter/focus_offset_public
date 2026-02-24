@@ -41,11 +41,14 @@ def main():
 
         # Dynamically import the requested dataset module
         import importlib
+
         dataset_module = importlib.import_module(f"src.datasets.{args.dataset}")
 
         # Some datasets have distinct loading logic (like AgNor which uses get_dataloader instead of get_dataloaders)
         if args.dataset in ["zstack_he", "zstack_ihc"]:
-            train_loader, val_loader = dataset_module.get_dataloaders(train_cfg=train_cfg)
+            train_loader, val_loader = dataset_module.get_dataloaders(
+                train_cfg=train_cfg
+            )
         elif args.dataset == "agnor_ome":
             # Usually AgNor is just test evaluation, but provided here for matching interface
             train_loader = dataset_module.get_dataloader(train_cfg=train_cfg)

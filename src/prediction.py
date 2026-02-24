@@ -140,7 +140,7 @@ def evaluate(
 
                 # Extract metadata for this sample
                 for key, val in meta.items():
-                    # Handle multi-element tensors (like tile_coords [R, C])
+                    # Handle multi-element tensors
                     if isinstance(val, torch.Tensor):
                         if val.dim() > 1 and val.size(1) > 1:
                             # It's a batch of vectors, convert this sample's vector to list

@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", Path.home()))
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data/niklas"))
 CACHE_DIR = PROJECT_ROOT / "cache"
 
 
@@ -34,6 +34,7 @@ class AgNorOMEConfig:
         path = PROJECT_ROOT / "splits" / f"splits_{self.name}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
+
     def get_train_index_path(self) -> Path:
         path = self.get_run_dir() / "train.parquet"
         path.parent.mkdir(parents=True, exist_ok=True)
