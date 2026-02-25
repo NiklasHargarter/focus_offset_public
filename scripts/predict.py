@@ -2,6 +2,9 @@
 
 import argparse
 import importlib
+from pathlib import Path
+
+import torch
 
 from src import config
 from src.models.architectures import MODEL_REGISTRY
@@ -28,9 +31,9 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default=None,
+        required=True,
         choices=list(MODEL_REGISTRY.keys()),
-        help="Manually specify model architecture if not in checkpoint.",
+        help="Manually specify model architecture.",
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -55,13 +58,25 @@ def main():
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
 
+    save_path = (
+        Path(args.output_dir or "predictions") / f"pred_{args.dataset}_{args.model}.csv"
+    )
+
+    # Explicitly load model (strict contract)
+    model = MODEL_REGISTRY[args.model]()
+
+    model.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
+
     evaluate(
+        model=model,
         dataloader=loader,
-        checkpoint_path=args.checkpoint,
-        output_dir=args.output_dir,
+        save_path=save_path,
+        metadata={
+            "dataset": args.dataset,
+            "checkpoint": Path(args.checkpoint).name,
+            "model_name": args.model or "multimodal",
+        },
         dry_run=args.dry_run,
-        dataset_name=args.dataset,
-        model_name_override=args.model,
     )
 
 

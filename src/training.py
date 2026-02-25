@@ -1,8 +1,5 @@
 """
-Core training logic.
-
 Provides ``train_one()`` — the single entry-point for fitting a model.
-Imported by the CLI scripts in ``scripts/``.
 """
 
 import warnings
@@ -10,7 +7,6 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from accelerate import Accelerator
 from tqdm.auto import tqdm
 
 
@@ -51,20 +47,12 @@ def train_one(
         seed: Random seed.
         dry_run: If True, limit to 2 epochs and 20 batches.
     """
-    # 0. Setup Accelerator
-    accelerator = Accelerator(
-        mixed_precision="bf16",  # Force bf16 as in original config if supported, else "fp16" or "no"
-        log_with="all",
-        project_dir="logs_smoke_test" if dry_run else "logs",
-    )
-
-    # Make sure log directory exists
-    log_dir = Path(accelerator.project_dir) / log_name
+    # 0. Setup Environment
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    log_dir = Path("logs_smoke_test" if dry_run else "logs") / log_name
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Reproducibility
     torch.manual_seed(seed)
-    # Accelerate handles device seeding
 
     # 2. Loss & Optimizer & Scheduler
     # Use HuberLoss by default if model doesn't have one
@@ -80,12 +68,9 @@ def train_one(
         optimizer, mode="min", factor=0.5, patience=scheduler_patience
     )
 
-    # 3. Prepare with Accelerate
-    model, optimizer, train_loader, val_loader = accelerator.prepare(
-        model, optimizer, train_loader, val_loader
-    )
+    # 3. Prepare Model
+    model = model.to(device)
 
-    # 4. Training Loop State
     best_val_loss = float("inf")
     patience_counter = 0
     start_epoch = 0
@@ -97,7 +82,7 @@ def train_one(
     if dry_run:
         max_epochs = 2
 
-    print(f"Training {log_name} for max {max_epochs} epochs on {accelerator.device}...")
+    print(f"Training {log_name} for max {max_epochs} epochs on {device}...")
 
     for epoch in range(start_epoch, max_epochs):
         model.train()
@@ -108,7 +93,6 @@ def train_one(
         progress_bar = tqdm(
             train_loader,
             desc=f"Epoch {epoch}/{max_epochs} [Train]",
-            disable=not accelerator.is_local_main_process,
             leave=False,
         )
 
@@ -116,17 +100,20 @@ def train_one(
             if dry_run and batch_idx >= 20:
                 break
 
-            dataset_images = batch["image"]
-            targets = batch["target"]
-            # Accelerate handles device placement
+            dataset_images = batch["image"].to(device, non_blocking=True)
+            targets = batch["target"].to(device, non_blocking=True)
 
             # Forward
             optimizer.zero_grad()
-            preds = model(dataset_images)
-            loss = criterion(preds, targets.unsqueeze(1))
+            with torch.autocast(
+                device_type="cuda" if device.type == "cuda" else "cpu",
+                dtype=torch.bfloat16,
+            ):
+                preds = model(dataset_images)
+                loss = criterion(preds, targets.unsqueeze(1))
 
             # Backward
-            accelerator.backward(loss)
+            loss.backward()
             optimizer.step()
 
             # Metrics
@@ -149,11 +136,15 @@ def train_one(
                 break
 
             with torch.no_grad():
-                dataset_images = batch["image"]
-                targets = batch["target"]
+                dataset_images = batch["image"].to(device, non_blocking=True)
+                targets = batch["target"].to(device, non_blocking=True)
 
-                preds = model(dataset_images)
-                loss = criterion(preds, targets.unsqueeze(1))
+                with torch.autocast(
+                    device_type="cuda" if device.type == "cuda" else "cpu",
+                    dtype=torch.bfloat16,
+                ):
+                    preds = model(dataset_images)
+                    loss = criterion(preds, targets.unsqueeze(1))
 
                 loss_val = loss.item()
                 val_loss_sum += loss_val
@@ -172,57 +163,80 @@ def train_one(
         current_lr = optimizer.param_groups[0]["lr"]
 
         # Logging
-        if accelerator.is_local_main_process:
-            print(
-                f"Epoch {epoch}: "
-                f"Train Loss={avg_train_loss:.4f}, "
-                f"Val Loss={avg_val_loss:.4f}, "
-                f"Val MAE={avg_val_mae:.4f}, "
-                f"LR={current_lr:.2e}"
+        print(
+            f"Epoch {epoch}: "
+            f"Train Loss={avg_train_loss:.4f}, "
+            f"Val Loss={avg_val_loss:.4f}, "
+            f"Val MAE={avg_val_mae:.4f}, "
+            f"LR={current_lr:.2e}"
+        )
+
+        with open(csv_path, "a") as f:
+            f.write(
+                f"{epoch},{avg_train_loss},{avg_val_loss},{avg_val_mae},{current_lr}\n"
             )
 
-            with open(csv_path, "a") as f:
-                f.write(
-                    f"{epoch},{avg_train_loss},{avg_val_loss},{avg_val_mae},{current_lr}\n"
-                )
+        # Checkpointing
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            patience_counter = 0
 
-            # Checkpointing
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                patience_counter = 0
+            checkpoint_dir = log_dir / "checkpoints"
+            checkpoint_dir.mkdir(exist_ok=True)
 
-                checkpoint_dir = log_dir / "checkpoints"
-                checkpoint_dir.mkdir(exist_ok=True)
+            # Save model
+            save_path = checkpoint_dir / f"best-e{epoch:03d}-vl{avg_val_loss:.6f}.pt"
 
-                # Save model
-                # Unwrap model for saving
-                unwrapped_model = accelerator.unwrap_model(model)
-                save_path = (
-                    checkpoint_dir / f"best-e{epoch:02d}-vl{avg_val_loss:.4f}.pt"
-                )
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "epoch": epoch,
+                    "loss": avg_val_loss,
+                },
+                save_path,
+            )
 
-                # Torch save
-                torch.save(
-                    {
-                        "epoch": epoch,
-                        "model_state_dict": unwrapped_model.state_dict(),
-                        "optimizer_state_dict": optimizer.state_dict(),
-                        "loss": avg_val_loss,
-                        "model_name": log_name,
-                    },
-                    save_path,
-                )
+            # Cleanup old checkpoints: keep only top 3 best
+            ckpt_files = sorted(
+                checkpoint_dir.glob("best-*.pt"),
+                key=lambda p: float(p.name.split("vl")[1].replace(".pt", "")),
+            )
+            for ckpt_to_remove in ckpt_files[3:]:
+                ckpt_to_remove.unlink()
 
-                # Save a copy as "best_weights.pt"
-                torch.save(unwrapped_model.state_dict(), log_dir / "best_weights.pt")
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
 
-            else:
-                patience_counter += 1
-                if patience_counter >= patience:
-                    print(f"Early stopping at epoch {epoch}")
-                    break
+    # Post-training cleanup and final model saving
+    checkpoint_dir = log_dir / "checkpoints"
+    if checkpoint_dir.exists():
+        # Find the absolute best checkpoint
+        ckpt_files = sorted(
+            checkpoint_dir.glob("best-*.pt"),
+            key=lambda p: float(p.name.split("vl")[1].replace(".pt", "")),
+        )
+        if ckpt_files:
+            best_ckpt_path = ckpt_files[0]  # The lowest validation loss
 
-        # Wait for all processes (if distributed)
-        accelerator.wait_for_everyone()
+            # Load the best state dictated by the checkpoint
+            checkpoint_data = torch.load(best_ckpt_path, map_location="cpu")
+            best_epoch = checkpoint_data["epoch"]
+            best_loss = checkpoint_data["loss"]
 
-    return accelerator
+            # Name it descriptively
+            final_name = f"{log_name}_best_e{best_epoch:03d}_vloss{best_loss:.4f}.pt"
+            final_path = log_dir / final_name
+
+            # Save purely the model weights (stripping optimizer/epoch metadata for clean inference)
+            torch.save(checkpoint_data["model_state_dict"], final_path)
+            print(f"Saved final pristine model to {final_path}")
+
+        # Clean up the intermediate checkpointing directory to save disk space
+        import shutil
+
+        shutil.rmtree(checkpoint_dir)
+
+    return model

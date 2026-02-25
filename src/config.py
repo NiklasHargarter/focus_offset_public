@@ -12,10 +12,10 @@ class TrainConfig:
     """Hyperparameters for model training."""
 
     batch_size: int = 512
-    num_workers: int = os.cpu_count() or 4
+    num_workers: int = 16
     prefetch_factor: int = 1
-    max_epochs: int = 5
-    patience: int = 5
+    max_epochs: int = 50
+    patience: int = 10
     learning_rate: float = 1e-4
     weight_decay: float = 0.05
     log_every_n_steps: int = 100

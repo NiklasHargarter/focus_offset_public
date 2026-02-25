@@ -58,7 +58,6 @@ class Jiang2018Dataset(Dataset):
             )
 
         self.samples: list[dict] = self._load_samples(split_dir, split)
-        print(f"Jiang2018Dataset [{split}]: {len(self.samples)} samples found.")
 
     @staticmethod
     def _cache_path(split: str) -> Path:
@@ -70,13 +69,9 @@ class Jiang2018Dataset(Dataset):
     def _load_samples(split_dir: Path, split: str) -> list[dict]:
         cache_path = Jiang2018Dataset._cache_path(split)
         if cache_path.exists():
-            print(f"Jiang2018Dataset [{split}]: loading from cache {cache_path}")
             with cache_path.open("rb") as fh:
                 return pickle.load(fh)
 
-        print(
-            f"Jiang2018Dataset [{split}]: scanning {split_dir} (first run, will cache)..."
-        )
         samples: list[dict] = []
 
         all_files: list[Path] = []
@@ -133,9 +128,6 @@ class Jiang2018Dataset(Dataset):
 
         with cache_path.open("wb") as fh:
             pickle.dump(samples, fh)
-        print(
-            f"Jiang2018Dataset [{split}]: cached {len(samples)} samples to {cache_path}"
-        )
         return samples
 
     def __len__(self) -> int:

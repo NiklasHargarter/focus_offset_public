@@ -82,16 +82,11 @@ def print_summary(df: pd.DataFrame, title: str) -> None:
     median = abs_error.median()
     max_error = abs_error.max()
 
-    print(f"\n{'=' * 50}")
-    print(f"  {title}")
+    print(f"\nSummary: {title}")
     print(f"  Samples:   {len(df):,}")
     print(f"  MAE:       {mae:.4f} µm")
     print(f"  Median AE: {median:.4f} µm")
     print(f"  Max |err|: {max_error:.4f} µm")
-
-    if "filename" in df.columns:
-        print(f"  Images:    {df['filename'].nunique()}")
-    print(f"{'=' * 50}\n")
 
 
 def main():

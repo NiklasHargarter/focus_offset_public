@@ -20,7 +20,7 @@ def generate_tissue_patches(
 ) -> list[tuple[int, int, float]]:
     patch_size_raw = params["patch_size"] * params["downsample"]
     stride = params["stride"]
-    mask_downscale = 8  # hardcoded as per user request for simplicity
+    mask_downscale = 8
 
     xs = range(0, width - patch_size_raw + 1, stride)
     ys = range(0, height - patch_size_raw + 1, stride)
@@ -82,8 +82,6 @@ def process_vsi_slide(
     slide_name = Path(slide_path).name
 
     for i, (x, y, _cov) in enumerate(candidates):
-        if i % 100 == 0:
-            print(f"[{slide_name}] focus {i}/{len(candidates)}")
         with suppress_stderr():
             stack = scene.read_block(
                 rect=(x, y, extent, extent),

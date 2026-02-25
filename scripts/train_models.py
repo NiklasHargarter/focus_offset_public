@@ -11,7 +11,14 @@ from src.training import train_one
 from src.utils.env import setup_environment
 
 # Only the fair-comparison ablation models (all ResNet-18, from scratch)
-ABLATION_VARIANTS = ["rgb", "fft", "dwt", "multimodal"]
+ABLATION_VARIANTS = [
+    # "rgb",
+    # "dwt",
+    "rgb_fft",
+    "grayscale_fft",
+    # "hematoxylin_fft",
+    # "radial_profile",
+]
 
 
 def main():
@@ -34,17 +41,17 @@ def main():
 
     setup_environment()
 
-    for variant_name in ABLATION_VARIANTS:
-        print("\n" + "=" * 40)
-        print(f"TRAINING ABLATION: {variant_name}")
-        print("=" * 40 + "\n")
+    if args.dry_run:
+        train_cfg.num_workers = 4
+        print(f"Dry run active: limiting workers to {train_cfg.num_workers}")
 
-        # Dynamically import the requested dataset module
+    for variant_name in ABLATION_VARIANTS:
+        print(f"\nTraining ablation: {variant_name}")
+
         import importlib
 
         dataset_module = importlib.import_module(f"src.datasets.{args.dataset}")
 
-        # Some datasets have distinct loading logic (like AgNor which uses get_dataloader instead of get_dataloaders)
         if args.dataset in ["zstack_he", "zstack_ihc"]:
             train_loader, val_loader = dataset_module.get_dataloaders(
                 train_cfg=train_cfg
@@ -73,9 +80,7 @@ def main():
             scheduler_patience=max(1, args.patience // 2),
         )
 
-    print("\n" + "=" * 40)
-    print("ALL ABLATION VARIANTS COMPLETED")
-    print("=" * 40)
+    print("\nAll ablation variants completed.")
 
 
 if __name__ == "__main__":

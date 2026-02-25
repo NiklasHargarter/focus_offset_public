@@ -17,6 +17,8 @@ checkpoints/
 cache/
 visualizations/
 logs/
+predictions/
+predictions_*/
 
 # Images
 *.png

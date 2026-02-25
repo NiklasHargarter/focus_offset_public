@@ -41,13 +41,10 @@ class VSIDataset(Dataset):
             actual_path = self.slide_dir / vsi_filename
             if not actual_path.exists():
                 raise FileNotFoundError(f"Slide not found at {actual_path}")
-            try:
-                with suppress_stderr():
-                    slide = slideio.open_slide(str(actual_path), "VSI")
-                    scene = slide.get_scene(0)
-                self._slides[vsi_filename] = (slide, scene)
-            except Exception as e:
-                raise RuntimeError(f"Error opening slide {vsi_filename}: {e}")
+            with suppress_stderr():
+                slide = slideio.open_slide(str(actual_path), "VSI")
+                scene = slide.get_scene(0)
+            self._slides[vsi_filename] = (slide, scene)
         return self._slides[vsi_filename][1]
 
     def __getitem__(self, idx: int) -> dict[str, Any]:

@@ -73,19 +73,13 @@ class OMEDataset(Dataset):
             reader = self._get_reader(img_name)
 
             # Calculate focus offset dynamically from OME metadata
-            try:
-                ome_metadata = reader.ome_metadata
-                import xml.etree.ElementTree as ET
+            ome_metadata = reader.ome_metadata
+            import xml.etree.ElementTree as ET
 
-                root = ET.fromstring(ome_metadata)
-                ns = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
-                pixels = root.find(".//ome:Pixels", ns)
-                if pixels is not None and "PhysicalSizeZ" in pixels.attrib:
-                    z_res_microns = float(pixels.attrib["PhysicalSizeZ"])
-                else:
-                    z_res_microns = 1.0  # Fallback
-            except Exception:
-                z_res_microns = 1.0
+            root = ET.fromstring(ome_metadata)
+            ns = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
+            pixels = root.find(".//ome:Pixels", ns)
+            z_res_microns = float(pixels.attrib["PhysicalSizeZ"])
 
             z_offset = float(best_z - z_level) * z_res_microns
 
