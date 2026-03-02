@@ -23,6 +23,8 @@ dependencies = [
     "pyarrow>=23.0.1",
     "tabulate>=0.9.0",
     "opencv-python-headless>=4.13.0.90",
+    "ipykernel>=7.2.0",
+    "scikit-learn>=1.8.0",
 ]
 
 [dependency-groups]
@@ -40,3 +42,12 @@ mypy_path = "."
 explicit_package_bases = true
 namespace_packages = true
 ignore_missing_imports = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "scripts*"]
+
+[project.scripts]
+train = "scripts.train:main"
+train_models = "scripts.train_models:main"
+predict_models = "scripts.predict_models:main"

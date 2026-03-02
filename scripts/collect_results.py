@@ -2,8 +2,14 @@ import pandas as pd
 from pathlib import Path
 import numpy as np
 
+# Use exact same constants as predict_models.py
+TRAIN_DATASETS = ["jiang2018", "zstack_he"]
+MODELS = ["rgb", "dwt", "rgb_fft", "grayscale_fft", "fourier_domain", "two_domain"]
+DATASETS = ["jiang2018_same", "jiang2018_diff", "zstack_he", "zstack_ihc", "agnor_ome"]
+
 
 def aggregate_jiang_predictions(df):
+    """Aggregate per-tile predictions for Jiang2018 dataset."""
     if "filename" not in df.columns:
         return df
     agg_rows = []
@@ -22,42 +28,72 @@ def aggregate_jiang_predictions(df):
     return pd.DataFrame(agg_rows)
 
 
-models = ["dwt", "fft", "rgb", "multimodal"]
-datasets = ["zstack_he", "zstack_ihc", "jiang2018"]
+def main():
+    print("Collecting Results...")
 
-results = []
+    # We will aggregate to display:
+    # Rows: Models (e.g. RGB(Jiang2018), RGB(ZSTACK_HE))
+    # Columns: Datasets (Jiang2018 SAME, Jiang2018 DIFF, HE, IHC, AGNOR OME)
 
-for m in models:
-    for d in datasets:
-        csv_path = Path(f"logs/{m}/eval_{m}_{d}.csv")
-        if not csv_path.exists():
-            continue
+    results = []
 
-        df = pd.read_csv(csv_path)
-        is_jiang = d == "jiang2018"
-        if is_jiang:
-            df = aggregate_jiang_predictions(df)
+    for train_domain in TRAIN_DATASETS:
+        for m in MODELS:
+            for d in DATASETS:
+                csv_path = Path(f"logs/{train_domain}/{m}/eval_{m}_{d}.csv")
+                if not csv_path.exists():
+                    continue
 
-        error = df["pred"] - df["target"]
-        abs_error = error.abs()
-        mae = abs_error.mean()
-        median = abs_error.median()
+                try:
+                    df = pd.read_csv(csv_path)
+                except pd.errors.EmptyDataError:
+                    continue
 
-        results.append(
-            {
-                "Model": m.upper(),
-                "Dataset": d.replace("zstack_", "").upper(),
-                "MAE": f"{mae:.4f}",
-                "Median AE": f"{median:.4f}",
-            }
-        )
+                if "jiang2018" in d:
+                    df = aggregate_jiang_predictions(df)
 
-res_df = pd.DataFrame(results)
-pivot = res_df.pivot(index="Model", columns="Dataset", values=["MAE", "Median AE"])
-# Reorder columns: group by dataset, then metric
-dataset_order = [d.replace("zstack_", "").upper() for d in datasets]
-metric_order = ["MAE", "Median AE"]
-pivot = pivot.reindex(columns=pd.MultiIndex.from_product([metric_order, dataset_order]))
-pivot.columns = [f"{ds} {metric}" for metric, ds in pivot.columns]
-pivot.index.name = "Model"
-print(pivot.to_markdown())
+                error = df["pred"] - df["target"]
+                abs_error = error.abs()
+                mae = abs_error.mean()
+                median = abs_error.median()
+
+                results.append(
+                    {
+                        "Model": f"{m.upper()} ({train_domain.upper()})",
+                        "Dataset": d.replace("zstack_", "").upper(),
+                        "MAE": f"{mae:.4f}",
+                        "Median AE": f"{median:.4f}",
+                    }
+                )
+
+    if not results:
+        print("\nNo results found.\n")
+        return
+
+    res_df = pd.DataFrame(results)
+
+    # Build pivot table
+    pivot = res_df.pivot(index="Model", columns="Dataset", values=["MAE", "Median AE"])
+
+    # Reorder columns to group by dataset, then metric
+    dataset_order = [d.replace("zstack_", "").upper() for d in DATASETS]
+
+    # Only include datasets that actually have results
+    available_datasets = [d for d in dataset_order if d in pivot.columns.levels[1]]
+
+    metric_order = ["MAE", "Median AE"]
+    pivot = pivot.reindex(
+        columns=pd.MultiIndex.from_product([metric_order, available_datasets])
+    )
+    pivot.columns = [f"{ds} {metric}" for metric, ds in pivot.columns]
+    pivot.index.name = "Model"
+
+    print("\n=======================================================")
+    print("=== Model Performance Across Train Domains & Datasets ===")
+    print("=======================================================\n")
+    print(pivot.to_markdown())
+    print("\n")
+
+
+if __name__ == "__main__":
+    main()

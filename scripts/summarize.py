@@ -103,19 +103,18 @@ def main():
     print(f"Reading {args.csv_path}...")
     df = pd.read_csv(args.csv_path)
 
-    # Try to infer a nice title from filename
-    # e.g. eval_rgb_Jiang2018.csv -> rgb on Jiang2018
-    name = args.csv_path.stem
-    if name.startswith("eval_"):
-        parts = name.split("_")
-        if len(parts) >= 3:
-            model = parts[1]
-            dataset = "_".join(parts[2:])
-            title = f"{model} on {dataset}"
-        else:
-            title = name
+    # We expect paths like logs/{dataset}/{model}/eval_{model}_{eval_dataset}.csv
+    # So we can cleanly extract: model (parent), train_dataset (grandparent)
+    parts = args.csv_path.parts
+    if len(parts) >= 3 and parts[-3] != "logs":
+        model = parts[-2]
+        train_dataset = parts[-3]
+        eval_dataset = args.csv_path.stem.split("_")[
+            -1
+        ]  # eval_dwt_jiang2018 -> jiang2018
+        title = f"{model} (train: {train_dataset}) evaluated on {eval_dataset}"
     else:
-        title = name
+        title = args.csv_path.stem
 
     print_summary(df, title)
 

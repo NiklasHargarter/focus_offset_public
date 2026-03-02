@@ -16,6 +16,6 @@ class TrainConfig:
     prefetch_factor: int = 1
     max_epochs: int = 50
     patience: int = 10
-    learning_rate: float = 1e-4
-    weight_decay: float = 0.05
+    learning_rate: float = 5e-5
+    weight_decay: float = 0.001
     log_every_n_steps: int = 100

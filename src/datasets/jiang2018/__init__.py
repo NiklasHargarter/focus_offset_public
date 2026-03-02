@@ -2,16 +2,28 @@ import pickle
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
+
 
 import albumentations as A
 import cv2
-
 import torch
 from albumentations.pytorch import ToTensorV2
-from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset
 
 from .config import CACHE_DIR, Jiang2018Config
+
+
+class Jiang2018Metadata(TypedDict):
+    filename: str
+    split: str
+    segment: int
+    location: int
+    seg_id: int
+    defocus_nm: int
+    x: int
+    y: int
+
 
 # Folder names within the incoherent_RGBchannels root
 _SPLIT_DIRS = {
@@ -42,6 +54,7 @@ class Jiang2018Dataset(Dataset):
         root_dir: Path,
         split: str,
         transform=None,
+        in_memory: bool = True,
     ):
         if split not in _SPLIT_DIRS:
             raise ValueError(
@@ -49,6 +62,8 @@ class Jiang2018Dataset(Dataset):
             )
         self.split = split
         self.transform = transform
+        self.in_memory = in_memory
+        self.image_cache: dict[Path, Any] = {}
 
         split_dir = root_dir / _SPLIT_DIRS[split]
         if not split_dir.exists():
@@ -58,6 +73,16 @@ class Jiang2018Dataset(Dataset):
             )
 
         self.samples: list[dict] = self._load_samples(split_dir, split)
+
+        if self.in_memory:
+            print(f"Loading {split} split into RAM...")
+            # We use a set of unique paths since test set has 20 tiles per image
+            unique_paths = {sample["path"] for sample in self.samples}
+            for path in unique_paths:
+                img = cv2.imread(str(path))
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                self.image_cache[path] = img
+            print(f"Loaded {len(self.image_cache)} unique images into RAM.")
 
     @staticmethod
     def _cache_path(split: str) -> Path:
@@ -135,8 +160,12 @@ class Jiang2018Dataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         sample = self.samples[idx]
-        img = cv2.imread(str(sample["path"]))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        if self.in_memory:
+            img = self.image_cache[sample["path"]]
+        else:
+            img = cv2.imread(str(sample["path"]))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         if sample["split"] != "train":
             img = cv2.resize(img, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
@@ -149,19 +178,21 @@ class Jiang2018Dataset(Dataset):
         else:
             image = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
 
+        metadata: Jiang2018Metadata = {
+            "filename": sample["path"].name,
+            "split": sample["split"],
+            "segment": sample["segment"],
+            "location": sample["location"],
+            "seg_id": sample["seg_id"] if sample["seg_id"] is not None else -1,
+            "defocus_nm": sample["defocus_nm"],
+            "x": 0,
+            "y": 0,
+        }
+
         res = {
             "image": image,
             "target": torch.tensor(sample["offset_um"], dtype=torch.float32),
-            "metadata": {
-                "filename": sample["path"].name,
-                "split": sample["split"],
-                "segment": sample["segment"],
-                "location": sample["location"],
-                "seg_id": sample["seg_id"] if sample["seg_id"] is not None else -1,
-                "defocus_nm": sample["defocus_nm"],
-                "x": 0,
-                "y": 0,
-            },
+            "metadata": metadata,
         }
         if "tile_coords" in sample:
             r, c = sample["tile_coords"]
@@ -209,50 +240,202 @@ def download_and_extract_jiang2018():
 def get_jiang2018_dataloaders(
     batch_size: int = 128,
     num_workers: int = 4,
+    in_memory: bool = True,
 ):
     """Get train and test dataloaders for Jiang2018."""
     # Ensure data is ready
     download_and_extract_jiang2018()
     raw_dir = Jiang2018Config().raw_dir / "incoherent_RGBchannels"
 
+    train_transform = A.Compose(
+        [
+            A.D4(p=1.0),
+            A.Compose(
+                [
+                    A.ColorJitter(
+                        brightness=0.3, contrast=0.3, saturation=0.3, hue=0.2, p=0.8
+                    ),
+                    A.ToGray(p=0.2),
+                    A.ChannelShuffle(p=0.1),
+                ],
+                p=1.0,
+            ),
+            A.Normalize(mean=0.5, std=0.5),
+            ToTensorV2(),
+        ]
+    )
+
     val_transform = A.Compose(
         [
-            A.ToFloat(max_value=255.0),
+            A.Normalize(mean=0.5, std=0.5),
             ToTensorV2(),  # HWC → CHW
         ]
     )
 
-    train_ds = Jiang2018Dataset(
+    # 1. Load the base training dataset (without transforms)
+    base_train_ds = Jiang2018Dataset(
         raw_dir,
         split="train",
-        transform=val_transform,
-    )
-    test_same_ds = Jiang2018Dataset(
-        raw_dir,
-        split="test_same",
-        transform=val_transform,
-    )
-    test_diff_ds = Jiang2018Dataset(
-        raw_dir,
-        split="test_diff",
-        transform=val_transform,
+        transform=None,
+        in_memory=in_memory,
     )
 
+    # 2. Group by Location to prevent data leakage
+    # Each folder s{segment}_l{location} is a unique scan site.
+    location_to_indices = {}
+    for idx, sample in enumerate(base_train_ds.samples):
+        loc_key = (sample["segment"], sample["location"])
+        if loc_key not in location_to_indices:
+            location_to_indices[loc_key] = []
+        location_to_indices[loc_key].append(idx)
+
+    unique_locations = sorted(list(location_to_indices.keys()))
+
+    # Deterministic split of locations
+    import random
+
+    rng = random.Random(42)
+    rng.shuffle(unique_locations)
+
+    num_val_locs = max(1, int(len(unique_locations) * 0.1))
+    val_locations = set(unique_locations[:num_val_locs])
+
+    train_indices = []
+    val_indices = []
+
+    for loc in unique_locations:
+        if loc in val_locations:
+            val_indices.extend(location_to_indices[loc])
+        else:
+            train_indices.extend(location_to_indices[loc])
+
+    print(f"Location-based split: {len(unique_locations)} total locations.")
+    print(
+        f"  Train: {len(unique_locations) - num_val_locs} locations, {len(train_indices)} images."
+    )
+    print(f"  Val: {num_val_locs} locations, {len(val_indices)} images.")
+
+    # 3. Create subsets
+    from torch.utils.data import Subset
+
+    train_subset = Subset(base_train_ds, train_indices)
+    val_subset = Subset(base_train_ds, val_indices)
+
+    # 4. Wrap with transforms
+    class TransformWrap(Dataset):
+        def __init__(self, subset, transform):
+            self.subset = subset
+            self.transform = transform
+
+        def __getitem__(self, idx):
+            # Access base dataset and the specific sample
+            dataset = self.subset.dataset
+            real_idx = self.subset.indices[idx]
+            sample = dataset.samples[real_idx]
+
+            # Use cache if available
+            if dataset.in_memory:
+                img = dataset.image_cache[sample["path"]]
+            else:
+                img = cv2.imread(str(sample["path"]))
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+            # Apply the transform requested
+            image = self.transform(image=img)["image"]
+
+            metadata: Jiang2018Metadata = {
+                "filename": sample["path"].name,
+                "split": sample["split"],
+                "segment": sample["segment"],
+                "location": sample["location"],
+                "seg_id": sample["seg_id"] if sample["seg_id"] is not None else -1,
+                "defocus_nm": sample["defocus_nm"],
+                "x": 0,
+                "y": 0,
+            }
+
+            return {
+                "image": image,
+                "target": torch.tensor(sample["offset_um"], dtype=torch.float32),
+                "metadata": metadata,
+            }
+
+        def __len__(self):
+            return len(self.subset)
+
     train_loader = DataLoader(
-        train_ds,
+        TransformWrap(train_subset, train_transform),
         batch_size=batch_size,
         num_workers=num_workers,
         shuffle=True,
         pin_memory=torch.cuda.is_available(),
+        drop_last=True,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else None,
     )
 
-    combined_test = ConcatDataset([test_same_ds, test_diff_ds])
-    test_loader = DataLoader(
-        combined_test,
+    val_loader = DataLoader(
+        TransformWrap(val_subset, val_transform),
         batch_size=batch_size,
         num_workers=num_workers,
         shuffle=False,
         pin_memory=torch.cuda.is_available(),
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else None,
     )
 
-    return train_loader, test_loader
+    return train_loader, val_loader
+
+
+def get_jiang2018_test_loaders(
+    batch_size: int = 128,
+    num_workers: int = 4,
+    in_memory: bool = True,
+    protocol: str = "all",
+):
+    """Get loaders for the two official Jiang2018 test protocols."""
+    download_and_extract_jiang2018()
+    raw_dir = Jiang2018Config().raw_dir / "incoherent_RGBchannels"
+
+    transform = A.Compose(
+        [
+            A.Normalize(mean=0.5, std=0.5),
+            ToTensorV2(),
+        ]
+    )
+
+    loaders = {}
+
+    if protocol in ("all", "same"):
+        # Official "Same Protocol" set
+        same_ds = Jiang2018Dataset(
+            raw_dir, split="test_same", transform=transform, in_memory=in_memory
+        )
+        same_loader = DataLoader(
+            same_ds,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+            pin_memory=torch.cuda.is_available(),
+            persistent_workers=num_workers > 0,
+            prefetch_factor=2 if num_workers > 0 else None,
+        )
+        loaders["same"] = same_loader
+
+    if protocol in ("all", "diff"):
+        # Official "Different Protocol" set
+        diff_ds = Jiang2018Dataset(
+            raw_dir, split="test_diff", transform=transform, in_memory=in_memory
+        )
+        diff_loader = DataLoader(
+            diff_ds,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+            pin_memory=torch.cuda.is_available(),
+            persistent_workers=num_workers > 0,
+            prefetch_factor=2 if num_workers > 0 else None,
+        )
+        loaders["diff"] = diff_loader
+
+    return loaders

@@ -10,14 +10,14 @@ from src.models.architectures import MODEL_REGISTRY
 from src.training import train_one
 from src.utils.env import setup_environment
 
-# Only the fair-comparison ablation models (all ResNet-18, from scratch)
+# Only the fair-comparison ablation models (all ResNet-50, from scratch)
 ABLATION_VARIANTS = [
-    # "rgb",
+    "rgb",
     # "dwt",
-    "rgb_fft",
-    "grayscale_fft",
-    # "hematoxylin_fft",
-    # "radial_profile",
+    # "rgb_fft",
+    # "grayscale_fft",
+    "fourier_domain",
+    # "two_domain",
 ]
 
 
@@ -25,11 +25,22 @@ def main():
     parser = argparse.ArgumentParser(description="Train all ablation variants")
     parser.add_argument("--dry-run", action="store_true")
     train_cfg = TrainConfig()
-    parser.add_argument("--batch_size", type=int, default=train_cfg.batch_size)
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=None,
+        help="Batch size (defaults to 40 for jiang2018, else from TrainConfig)",
+    )
     parser.add_argument("--max_epochs", type=int, default=train_cfg.max_epochs)
     parser.add_argument("--patience", type=int, default=train_cfg.patience)
     parser.add_argument("--learning_rate", type=float, default=train_cfg.learning_rate)
     parser.add_argument("--weight_decay", type=float, default=train_cfg.weight_decay)
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=train_cfg.num_workers,
+        help="Number of data loading workers",
+    )
     parser.add_argument(
         "--dataset",
         type=str,
@@ -42,8 +53,17 @@ def main():
     setup_environment()
 
     if args.dry_run:
-        train_cfg.num_workers = 4
+        train_cfg.num_workers = min(args.num_workers, 4)
         print(f"Dry run active: limiting workers to {train_cfg.num_workers}")
+    else:
+        train_cfg.num_workers = args.num_workers
+
+    # Set batch size
+    if args.batch_size is None:
+        batch_size = train_cfg.batch_size
+    else:
+        batch_size = args.batch_size
+    print(f"Using batch size: {batch_size}")
 
     for variant_name in ABLATION_VARIANTS:
         print(f"\nTraining ablation: {variant_name}")
@@ -62,7 +82,8 @@ def main():
             val_loader = train_loader
         else:
             train_loader, val_loader = dataset_module.get_jiang2018_dataloaders(
-                batch_size=args.batch_size, num_workers=train_cfg.num_workers
+                batch_size=batch_size,
+                num_workers=train_cfg.num_workers,
             )
 
         model = MODEL_REGISTRY[variant_name]()
@@ -71,7 +92,7 @@ def main():
             model,
             train_loader,
             val_loader,
-            log_name=variant_name,
+            log_name=f"{args.dataset}/{variant_name}",
             max_epochs=args.max_epochs,
             patience=args.patience,
             dry_run=args.dry_run,

@@ -10,7 +10,6 @@ from pathlib import Path
 import pandas as pd
 import torch
 import torch.nn as nn
-from tqdm.auto import tqdm
 
 
 def evaluate(
@@ -45,12 +44,7 @@ def evaluate(
     batch_dfs = []
 
     with torch.no_grad():
-        for batch_idx, batch in enumerate(
-            tqdm(
-                dataloader,
-                desc="Predicting",
-            )
-        ):
+        for batch_idx, batch in enumerate(dataloader):
             if dry_run and batch_idx >= 2:
                 break
             images = batch["image"].to(device, non_blocking=True)
@@ -74,10 +68,7 @@ def evaluate(
             # Add batch-specific metadata
             batch_meta = batch["metadata"]
             for key, val in batch_meta.items():
-                if isinstance(val, torch.Tensor):
-                    batch_data[key] = val.detach().cpu().numpy()
-                else:
-                    batch_data[key] = val
+                batch_data[key] = val
 
             batch_dfs.append(pd.DataFrame(batch_data))
 

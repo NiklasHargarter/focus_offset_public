@@ -13,7 +13,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="multimodal",
+        default="rgb",
         choices=list(MODEL_REGISTRY.keys()),
         help="Model variant to train",
     )
@@ -54,7 +54,8 @@ def main():
         val_loader = train_loader
     else:
         train_loader, val_loader = dataset_module.get_jiang2018_dataloaders(
-            batch_size=args.batch_size, num_workers=train_cfg.num_workers
+            batch_size=args.batch_size,
+            num_workers=train_cfg.num_workers,
         )
 
     model = MODEL_REGISTRY[args.model]()
@@ -63,7 +64,7 @@ def main():
         model,
         train_loader,
         val_loader,
-        log_name=args.model,
+        log_name=f"{args.dataset}/{args.model}",
         max_epochs=args.max_epochs,
         patience=args.patience,
         dry_run=args.dry_run,

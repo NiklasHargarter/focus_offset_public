@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
+
 
 import cv2
 import numpy as np
@@ -8,6 +9,15 @@ import pandas as pd
 import tifffile
 import torch
 from torch.utils.data import Dataset
+
+
+class OmeMetadata(TypedDict):
+    filename: str
+    x: int
+    y: int
+    z_level: int
+    optimal_z: int
+    num_z: int
 
 
 class OMEDataset(Dataset):
@@ -79,7 +89,7 @@ class OMEDataset(Dataset):
             root = ET.fromstring(ome_metadata)
             ns = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
             pixels = root.find(".//ome:Pixels", ns)
-            z_res_microns = float(pixels.attrib["PhysicalSizeZ"])
+            z_res_microns = float(pixels.attrib.get("PhysicalSizeZ", 0.5))
 
             z_offset = float(best_z - z_level) * z_res_microns
 
@@ -110,7 +120,7 @@ class OMEDataset(Dataset):
             else:
                 image = torch.from_numpy(block).permute(2, 0, 1).float() / 255.0
 
-            metadata = {
+            metadata: OmeMetadata = {
                 "filename": img_name,
                 "x": int(x),
                 "y": int(y),

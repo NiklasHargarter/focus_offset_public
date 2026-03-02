@@ -4,10 +4,10 @@ Provides ``train_one()`` — the single entry-point for fitting a model.
 
 import warnings
 from pathlib import Path
+import time
 
 import torch
 import torch.nn as nn
-from tqdm.auto import tqdm
 
 
 # Filter specific warnings if needed
@@ -27,7 +27,7 @@ def train_one(
     patience: int = 5,
     learning_rate: float = 1e-4,
     weight_decay: float = 0.05,
-    scheduler_patience: int = 3,
+    scheduler_patience: int = 5,
     seed: int = 42,
     dry_run: bool = False,
 ):
@@ -77,7 +77,7 @@ def train_one(
 
     csv_path = log_dir / "metrics.csv"
     with open(csv_path, "w") as f:
-        f.write("epoch,train_loss,val_loss,val_mae,lr\n")
+        f.write("epoch,train_loss,val_loss,val_mae,lr,epoch_duration,timestamp\n")
 
     if dry_run:
         max_epochs = 2
@@ -85,18 +85,13 @@ def train_one(
     print(f"Training {log_name} for max {max_epochs} epochs on {device}...")
 
     for epoch in range(start_epoch, max_epochs):
+        epoch_start_time = time.time()
         model.train()
         train_loss_sum = 0.0
         train_steps = 0
 
         # Train Loop
-        progress_bar = tqdm(
-            train_loader,
-            desc=f"Epoch {epoch}/{max_epochs} [Train]",
-            leave=False,
-        )
-
-        for batch_idx, batch in enumerate(progress_bar):
+        for batch_idx, batch in enumerate(train_loader):
             if dry_run and batch_idx >= 20:
                 break
 
@@ -114,14 +109,13 @@ def train_one(
 
             # Backward
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             # Metrics
             loss_val = loss.item()
             train_loss_sum += loss_val
             train_steps += 1
-
-            progress_bar.set_postfix({"loss": f"{loss_val:.4f}"})
 
         avg_train_loss = train_loss_sum / train_steps if train_steps > 0 else 0.0
 
@@ -160,7 +154,11 @@ def train_one(
 
         # Update Scheduler
         scheduler.step(avg_val_loss)
+
         current_lr = optimizer.param_groups[0]["lr"]
+
+        epoch_duration = time.time() - epoch_start_time
+        current_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
         # Logging
         print(
@@ -168,12 +166,13 @@ def train_one(
             f"Train Loss={avg_train_loss:.4f}, "
             f"Val Loss={avg_val_loss:.4f}, "
             f"Val MAE={avg_val_mae:.4f}, "
-            f"LR={current_lr:.2e}"
+            f"LR={current_lr:.2e}, "
+            f"Time={epoch_duration:.1f}s"
         )
 
         with open(csv_path, "a") as f:
             f.write(
-                f"{epoch},{avg_train_loss},{avg_val_loss},{avg_val_mae},{current_lr}\n"
+                f"{epoch},{avg_train_loss},{avg_val_loss},{avg_val_mae},{current_lr},{epoch_duration:.2f},{current_timestamp}\n"
             )
 
         # Checkpointing
@@ -226,8 +225,8 @@ def train_one(
             best_epoch = checkpoint_data["epoch"]
             best_loss = checkpoint_data["loss"]
 
-            # Name it descriptively
-            final_name = f"{log_name}_best_e{best_epoch:03d}_vloss{best_loss:.4f}.pt"
+            # Name it descriptively without redundantly including the log_name
+            final_name = f"best_e{best_epoch:03d}_vloss{best_loss:.4f}.pt"
             final_path = log_dir / final_name
 
             # Save purely the model weights (stripping optimizer/epoch metadata for clean inference)

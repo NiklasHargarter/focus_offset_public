@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
+
 
 import pandas as pd
 import slideio
@@ -8,6 +9,14 @@ import torch
 from torch.utils.data import Dataset
 
 from src.utils.io_utils import suppress_stderr
+
+
+class VsiMetadata(TypedDict):
+    filename: str
+    x: int
+    y: int
+    z_level: int
+    optimal_z: int
 
 
 class VSIDataset(Dataset):
@@ -71,16 +80,18 @@ class VSIDataset(Dataset):
         else:
             image = torch.from_numpy(block).permute(2, 0, 1).float() / 255.0
 
+        metadata: VsiMetadata = {
+            "filename": vsi_name,
+            "x": int(x),
+            "y": int(y),
+            "z_level": int(z_level),
+            "optimal_z": int(row["optimal_z"]),
+        }
+
         return {
             "image": image,
             "target": torch.tensor(z_offset, dtype=torch.float32),
-            "metadata": {
-                "filename": vsi_name,
-                "x": int(x),
-                "y": int(y),
-                "z_level": int(z_level),
-                "optimal_z": int(row["optimal_z"]),
-            },
+            "metadata": metadata,
         }
 
 

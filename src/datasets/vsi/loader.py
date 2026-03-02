@@ -27,11 +27,16 @@ def get_vsi_transforms(mode: Literal["train", "val"]):
                     ],
                     p=1.0,
                 ),
-                A.ToFloat(max_value=255.0),
+                A.Normalize(mean=0.5, std=0.5),
                 ToTensorV2(),
             ]
         )
-    return A.Compose([A.ToFloat(max_value=255.0), ToTensorV2()])
+    return A.Compose(
+        [
+            A.Normalize(mean=0.5, std=0.5),
+            ToTensorV2(),
+        ]
+    )
 
 
 def get_vsi_dataloaders(
@@ -75,6 +80,9 @@ def get_vsi_dataloaders(
         "batch_size": train_cfg.batch_size,
         "num_workers": train_cfg.num_workers,
         "pin_memory": torch.cuda.is_available(),
+        "drop_last": True,
+        "persistent_workers": train_cfg.num_workers > 0,
+        "prefetch_factor": 2 if train_cfg.num_workers > 0 else None,
     }
     return DataLoader(train_ds, shuffle=True, **kwargs), DataLoader(
         val_ds, shuffle=False, **kwargs
