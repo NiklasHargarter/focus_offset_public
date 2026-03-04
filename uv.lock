@@ -609,7 +609,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/16/18/9726cac3c7cb9e5a1
 [[package]]
 name = "focus-offset-public"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "albumentations" },
     { name = "exact-sync" },

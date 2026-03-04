@@ -27,6 +27,10 @@ dependencies = [
     "scikit-learn>=1.8.0",
 ]
 
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
@@ -45,9 +49,9 @@ ignore_missing_imports = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*", "scripts*"]
+include = ["shared_datasets*", "focus_offset*", "synthetic_data*"]
 
 [project.scripts]
-train = "scripts.train:main"
-train_models = "scripts.train_models:main"
-predict_models = "scripts.predict_models:main"
+train = "focus_offset.scripts.train:main"
+train_models = "focus_offset.scripts.train_models:main"
+predict_models = "focus_offset.scripts.predict_models:main"
