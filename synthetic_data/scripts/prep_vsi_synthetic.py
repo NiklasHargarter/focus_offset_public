@@ -1,9 +1,8 @@
-import argparse
+import json
 import os
 from pathlib import Path
 from multiprocessing import Pool
 from functools import partial
-
 
 from shared_datasets.vsi.prep.indexing import create_vsi_split, _run_split
 from synthetic_data.prep.preprocess_synthetic import process_vsi_slide_synthetic
@@ -13,48 +12,39 @@ def index_vsi_synthetic_dataset(
     slide_dir: Path,
     index_dir: Path,
     split_path: Path,
-    params: dict,
+    patch_size: int,
+    downsample: int,
+    min_coverage: float,
+    exclude_pattern: str = "_all_",
     workers: int | None = None,
     dry_run: bool = False,
 ):
-    import json
-
-    # We reuse existing split format
     splits = (
-        create_vsi_split(slide_dir, split_path, params.get("exclude_pattern", "_all_"))
+        create_vsi_split(slide_dir, split_path, exclude_pattern)
         if not split_path.exists()
         else json.loads(split_path.read_text())
     )
 
-    train_names, test_names = (
-        set(splits.get("train_pool", [])),
-        set(splits.get("test", [])),
-    )
+    train_names = set(splits.get("train_pool", []))
+    test_names = set(splits.get("test", []))
 
     all_files = sorted(slide_dir.glob("*.vsi"))
-    if "exclude_pattern" in params:
-        all_files = [
-            f
-            for f in all_files
-            if params["exclude_pattern"].lower() not in f.name.lower()
-        ]
+    all_files = [f for f in all_files if exclude_pattern.lower() not in f.name.lower()]
+
+    train_files = (
+        [f for f in all_files if f.name in train_names] if train_names else all_files
+    )
+    test_files = [f for f in all_files if f.name in test_names]
 
     if dry_run:
-        all_files = all_files[:2]
-
-    if train_names:
-        train_files = [f for f in all_files if f.name in train_names]
-    else:
-        train_files = all_files
-
-    test_files = [f for f in all_files if f.name in test_names]
+        train_files = train_files[:2]
+        test_files = test_files[:2]
 
     process_func = partial(
         process_vsi_slide_synthetic,
-        patch_size_n=params["patch_size_n"],
-        downsample=params["downsample"],
-        stride=params["stride"],
-        min_coverage=params["cov"],
+        patch_size=patch_size,
+        downsample=downsample,
+        min_coverage=min_coverage,
         dry_run=dry_run,
     )
 
@@ -72,33 +62,21 @@ def index_vsi_synthetic_dataset(
 
 
 def main():
-    parser = argparse.ArgumentParser("Prepare Synthetic VSI Index")
-    parser.add_argument("--slide_dir", type=str, required=True)
-    parser.add_argument("--index_dir", type=str, required=True)
-    parser.add_argument("--split_path", type=str, required=True)
-    parser.add_argument("--patch_size_n", type=int, default=1024)
-    parser.add_argument("--downsample", type=int, default=2)
-    parser.add_argument("--stride", type=int, default=1024)
-    parser.add_argument("--cov", type=float, default=0.5)
-    parser.add_argument("--workers", type=int, default=None)
-    parser.add_argument("--dry-run", action="store_true")
+    from synthetic_data.config import SyntheticConfig
 
-    args = parser.parse_args()
+    config = SyntheticConfig()
 
-    params = {
-        "patch_size_n": args.patch_size_n,
-        "downsample": args.downsample,
-        "stride": args.stride,
-        "cov": args.cov,
-    }
+    config.index_dir.mkdir(parents=True, exist_ok=True)
 
     index_vsi_synthetic_dataset(
-        Path(args.slide_dir),
-        Path(args.index_dir),
-        Path(args.split_path),
-        params,
-        args.workers,
-        args.dry_run,
+        slide_dir=Path(config.slide_dir),
+        index_dir=config.index_dir,
+        split_path=config.split_path,
+        patch_size=config.patch_size_input,
+        downsample=config.downsample,
+        min_coverage=config.min_coverage,
+        workers=config.workers,
+        dry_run=config.dry_run,
     )
 
 

@@ -1,21 +1,22 @@
 import os
 from pathlib import Path
 from typing import Any, TypedDict
-
 import pandas as pd
 import slideio
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 
 from focus_offset.utils.io_utils import suppress_stderr
+from .config import SyntheticConfig
 
 
 class SyntheticVSIMetadata(TypedDict):
-    filename: str
-    x: int
-    y: int
-    optimal_z: int
-    offset_z: int
+    slide_name: str
+    patch_x: int
+    patch_y: int
+    focal_plane_index: int
+    relative_offset_steps: int
+    z_step_size_microns: float
 
 
 class SyntheticVSIDataset(Dataset):
@@ -23,35 +24,30 @@ class SyntheticVSIDataset(Dataset):
         self,
         index_df: pd.DataFrame,
         slide_dir: Path,
-        patch_size_n: int = 1024,
-        patch_size_k: int = 256,
-        z_offset_steps: int = 5,
-        downsample: int = 2,
+        config: SyntheticConfig,
         transform: Any | None = None,
     ):
         """
         Synthetic Dataset for Focus Offset parsing.
-
-        Args:
-            index_df: DataFrame containing the prep_synthetic index
-                      (needs 'slide_name', 'x', 'y', 'optimal_z', 'num_z')
-            slide_dir: Base directory containing .vsi files
-            patch_size_n: Size of the N*N patch at the optimal focal plane
-            patch_size_k: Size of the K*K patch at the offset plane (k < N)
-            z_offset_steps: Distance in focal planes from optimal Z for the K*K patch
-            downsample: Extraction downsample level
-            transform: Transformations applied to both patches (must handle dict format or independent)
         """
-        if patch_size_k > patch_size_n:
-            raise ValueError("K must be less than or equal to N")
+        if config.top_percent_laplacian < 1.0:
+            num_keep = int(len(index_df) * config.top_percent_laplacian)
+            df = (
+                index_df.sort_values("max_focus_score", ascending=False)
+                .head(num_keep)
+                .reset_index(drop=True)
+            )
+        else:
+            df = index_df
 
-        self.df = index_df
+        self.df = df
         self.slide_dir = Path(slide_dir)
-        self.patch_size_n = patch_size_n
-        self.patch_size_k = patch_size_k
-        self.z_offset_steps = z_offset_steps
-        self.downsample = downsample
+        self.patch_size_input = config.patch_size_input
+        self.patch_size_target = config.patch_size_target
+        self.z_offset_steps = config.z_offset_steps
+        self.downsample = config.downsample
         self.transform = transform
+        self.read_target = not config.simulation_mode
 
         self._slides: dict[str, Any] | None = None
         self._owner_pid: int | None = None
@@ -59,7 +55,7 @@ class SyntheticVSIDataset(Dataset):
     def __len__(self) -> int:
         return len(self.df)
 
-    def _get_scene(self, vsi_filename: str):
+    def _get_scene(self, vsi_filename: str) -> tuple[Any, float]:
         current_pid = os.getpid()
         if self._slides is None or self._owner_pid != current_pid:
             self._slides = {}
@@ -67,13 +63,54 @@ class SyntheticVSIDataset(Dataset):
 
         if vsi_filename not in self._slides:
             actual_path = self.slide_dir / vsi_filename
-            if not actual_path.exists():
-                raise FileNotFoundError(f"Slide not found at {actual_path}")
             with suppress_stderr():
                 slide = slideio.open_slide(str(actual_path), "VSI")
                 scene = slide.get_scene(0)
-            self._slides[vsi_filename] = (slide, scene)
-        return self._slides[vsi_filename][1]
+
+            z_res_microns = scene.z_resolution * 1e6
+
+            self._slides[vsi_filename] = (slide, scene, z_res_microns)
+
+        return self._slides[vsi_filename][1], self._slides[vsi_filename][2]
+
+    def _read_input_patch(
+        self, scene, x: int, y: int, focal_plane_index: int
+    ) -> torch.Tensor:
+        block_input = scene.read_block(
+            rect=(
+                x,
+                y,
+                self.patch_size_input * self.downsample,
+                self.patch_size_input * self.downsample,
+            ),
+            size=(self.patch_size_input, self.patch_size_input),
+            slices=(focal_plane_index, focal_plane_index + 1),
+        )
+        return torch.from_numpy(block_input).permute(2, 0, 1).float() / 255.0
+
+    def _read_target_patch(
+        self, scene, x: int, y: int, focal_plane_index: int
+    ) -> torch.Tensor | None:
+        if not self.read_target:
+            return None
+
+        input_z_index = focal_plane_index + self.z_offset_steps
+        center_x = x + (self.patch_size_input * self.downsample) // 2
+        center_y = y + (self.patch_size_input * self.downsample) // 2
+        target_x = center_x - (self.patch_size_target * self.downsample) // 2
+        target_y = center_y - (self.patch_size_target * self.downsample) // 2
+
+        block_target = scene.read_block(
+            rect=(
+                target_x,
+                target_y,
+                self.patch_size_target * self.downsample,
+                self.patch_size_target * self.downsample,
+            ),
+            size=(self.patch_size_target, self.patch_size_target),
+            slices=(input_z_index, input_z_index + 1),
+        )
+        return torch.from_numpy(block_target).permute(2, 0, 1).float() / 255.0
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         row = self.df.iloc[idx]
@@ -81,74 +118,55 @@ class SyntheticVSIDataset(Dataset):
 
         x = int(row["x"])
         y = int(row["y"])
-        optimal_z = int(row["optimal_z"])
+        focal_plane_index = int(row["optimal_z"])
 
-        scene = self._get_scene(vsi_name)
-        num_z = scene.num_z_slices
+        scene, z_step_size_microns = self._get_scene(vsi_name)
 
-        # Determine the target z-slice for the K*K patch directly relative to optimal_z
-        offset_z = optimal_z + self.z_offset_steps
-        if offset_z < 0 or offset_z >= num_z:
-            raise ValueError(
-                f"Requested Z offset_z={offset_z} is out of bounds for slide "
-                f"{vsi_name} with {num_z} slices (optimal_z={optimal_z})."
-            )
+        tensor_input = self._read_input_patch(scene, x, y, focal_plane_index)
 
-        # 1. Read the N * N Patch at optimal Z
-        extent_n = self.patch_size_n * self.downsample
-
-        block_n = scene.read_block(
-            rect=(x, y, extent_n, extent_n),
-            size=(self.patch_size_n, self.patch_size_n),
-            slices=(optimal_z, optimal_z + 1),
-        )
-
-        # 2. Read the K * K Patch at offset Z
-        extent_k = self.patch_size_k * self.downsample
-
-        # Calculate exactly the center coordinates of K inside N at the slide level
-        center_x = x + (extent_n // 2)
-        center_y = y + (extent_n // 2)
-
-        k_x = center_x - (extent_k // 2)
-        k_y = center_y - (extent_k // 2)
-
-        block_k = scene.read_block(
-            rect=(k_x, k_y, extent_k, extent_k),
-            size=(self.patch_size_k, self.patch_size_k),
-            slices=(offset_z, offset_z + 1),
-        )
+        tensor_target = self._read_target_patch(scene, x, y, focal_plane_index)
 
         if self.transform:
-            pass
-
-        # Convert HWC numpy -> CHW tensor (normalizing to [0, 1])
-        tensor_n = torch.from_numpy(block_n).permute(2, 0, 1).float() / 255.0
-        tensor_k = torch.from_numpy(block_k).permute(2, 0, 1).float() / 255.0
-
-        # Read z resolution dynamically from scene
-        z_res = getattr(scene, "z_resolution", 0)
-        if not z_res:
-            raise ValueError(f"Slide {vsi_name} has no Z-resolution.")
-        z_res_microns = z_res * 1e6
-
-        z_offset_actual = offset_z - optimal_z
-        z_offset_microns = z_offset_actual * z_res_microns
+            tensor_input = self.transform(tensor_input)
+            if tensor_target is not None:
+                tensor_target = self.transform(tensor_target)
 
         metadata: SyntheticVSIMetadata = {
-            "filename": vsi_name,
-            "x": x,
-            "y": y,
-            "optimal_z": optimal_z,
-            "offset_z": offset_z,
-            "z_offset_microns": z_offset_microns,
-            "z_res_microns": z_res_microns,
+            "slide_name": vsi_name,
+            "patch_x": x,
+            "patch_y": y,
+            "focal_plane_index": focal_plane_index,
+            "relative_offset_steps": self.z_offset_steps,
+            "z_step_size_microns": z_step_size_microns,
         }
 
-        return {
-            "optimal_patch": tensor_n,
-            "offset_patch": tensor_k,
-            "z_offset_actual": z_offset_actual,
-            "z_offset_microns": z_offset_microns,
-            "metadata": metadata,
-        }
+        out = {"input": tensor_input, "metadata": metadata}
+        if tensor_target is not None:
+            out["target"] = tensor_target
+        return out
+
+
+def get_synthetic_dataloaders(config: SyntheticConfig, num_workers: int):
+    """Create DataLoaders for the synthetic dataset defined by config."""
+    slide_dir = Path(config.slide_dir)
+    train_df = pd.read_parquet(config.index_dir / "train_synthetic.parquet")
+    test_df = pd.read_parquet(config.index_dir / "test_synthetic.parquet")
+
+    train_dataset = SyntheticVSIDataset(
+        index_df=train_df, slide_dir=slide_dir, config=config
+    )
+    val_dataset = SyntheticVSIDataset(
+        index_df=test_df, slide_dir=slide_dir, config=config
+    )
+
+    kwargs = {
+        "batch_size": config.batch_size,
+        "num_workers": num_workers,
+        "pin_memory": torch.cuda.is_available(),
+        "persistent_workers": num_workers > 0,
+        "prefetch_factor": 2 if num_workers > 0 else None,
+    }
+
+    train_loader = DataLoader(train_dataset, shuffle=True, **kwargs)
+    val_loader = DataLoader(val_dataset, shuffle=False, **kwargs)
+    return train_loader, val_loader

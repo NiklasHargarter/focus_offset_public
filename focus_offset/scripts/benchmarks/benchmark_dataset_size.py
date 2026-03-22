@@ -12,7 +12,9 @@ from shared_datasets.vsi.prep.preprocess import get_tissue_patches
 from focus_offset.utils.io_utils import suppress_stderr
 
 
-def worker_estimate_slide(slide_path: Path, params: dict) -> tuple[int, int]:
+def worker_estimate_slide(
+    slide_path: Path, patch_size: int, downsample: int, cov: float
+) -> tuple[int, int]:
     """Return the number of valid patches for a single slide and the num_z."""
 
     try:
@@ -24,9 +26,11 @@ def worker_estimate_slide(slide_path: Path, params: dict) -> tuple[int, int]:
 
         candidates = get_tissue_patches(
             scene=scene,
-            patch_size_raw=params["patch_size"] * params["downsample"],
-            stride=params["stride"],
-            min_coverage=params["cov"],
+            patch_size=patch_size,
+            downsample=downsample,
+            min_coverage=cov,
+            target_downscale=8,
+            return_dropped=False,
         )
         return len(candidates), num_z
     except Exception as e:
@@ -46,16 +50,11 @@ def benchmark_dataset_size(dataset_path: Path, cov: float, workers: int | None =
     )
     print(f"Using {workers} workers.")
 
-    params = {
-        "downsample": 2,
-        "cov": cov,
-        "patch_size": 224,
-        "stride": 224 * 2,
-    }
-
     process_func = partial(
         worker_estimate_slide,
-        params=params,
+        patch_size=224,
+        downsample=2,
+        cov=cov,
     )
 
     total_patches = 0

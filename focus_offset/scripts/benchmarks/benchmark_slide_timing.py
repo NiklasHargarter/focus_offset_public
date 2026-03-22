@@ -10,16 +10,13 @@ Usage:
 """
 
 import time
-from functools import partial
 from tqdm import tqdm
 
 from shared_datasets.zstack_he import (
     SLIDE_DIR,
     DOWNSAMPLE,
     PATCH_SIZE,
-    EXCLUDE_PATTERN,
     COV,
-    STRIDE,
 )
 from shared_datasets.vsi.prep.preprocess import process_vsi_slide
 
@@ -37,19 +34,16 @@ def benchmark_slide_timing(
     print(f"Sample    : {len(sample)} slides, full focus search")
     print()
 
-    params = {
-        "downsample": DOWNSAMPLE,
-        "cov": COV,
-        "patch_size": PATCH_SIZE,
-        "stride": STRIDE,
-        "exclude_pattern": EXCLUDE_PATTERN,
-    }
-
-    func = partial(process_vsi_slide, params=params, dry_run=False)
     slide_times: list[float] = []
     for s in tqdm(sample):
         t0 = time.perf_counter()
-        func(s)
+        process_vsi_slide(
+            s,
+            patch_size=PATCH_SIZE,
+            downsample=DOWNSAMPLE,
+            min_coverage=COV,
+            dry_run=False,
+        )
         slide_times.append(time.perf_counter() - t0)
 
     avg = sum(slide_times) / len(slide_times)

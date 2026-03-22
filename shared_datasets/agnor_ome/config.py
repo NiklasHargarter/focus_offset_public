@@ -14,7 +14,6 @@ class AgNorOMEConfig:
 
     class prep:
         patch_size: int = 224
-        stride: int = 224
         downsample_factor: int = 1
         min_tissue_coverage: float = 0.2
 

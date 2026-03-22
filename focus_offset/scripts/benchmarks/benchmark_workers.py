@@ -14,7 +14,6 @@ Usage:
 
 import time
 import os
-from functools import partial
 import multiprocessing as mp
 from pathlib import Path
 
@@ -24,15 +23,19 @@ from shared_datasets.zstack_he import (
     SLIDE_DIR,
     DOWNSAMPLE,
     PATCH_SIZE,
-    EXCLUDE_PATTERN,
     COV,
-    STRIDE,
 )
 from shared_datasets.vsi.prep.preprocess import process_vsi_slide
 
 
-def _worker(slide_path: Path, params: dict) -> None:
-    process_vsi_slide(slide_path, params, dry_run=True)
+def _worker(slide_path: Path) -> None:
+    process_vsi_slide(
+        slide_path,
+        patch_size=PATCH_SIZE,
+        downsample=DOWNSAMPLE,
+        min_coverage=COV,
+        dry_run=True,
+    )
 
 
 def benchmark_workers(
@@ -55,16 +58,8 @@ def benchmark_workers(
     print(f"CPUs     : {n_cpu}  |  sweeping workers: {candidates}")
     print()
 
-    params = {
-        "downsample": DOWNSAMPLE,
-        "cov": COV,
-        "patch_size": PATCH_SIZE,
-        "stride": STRIDE,
-        "exclude_pattern": EXCLUDE_PATTERN,
-    }
-
     ctx = mp.get_context("spawn")
-    func = partial(_worker, params=params)
+    func = _worker
     results: dict[int, float] = {}
 
     for n_workers in candidates:

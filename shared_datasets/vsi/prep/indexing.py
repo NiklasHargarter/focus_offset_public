@@ -9,6 +9,9 @@ import pandas as pd
 
 from shared_datasets.vsi.prep.preprocess import process_vsi_slide
 
+# Dry-run limits
+DRY_RUN_MAX_SLIDES = 2
+
 
 def _run_split(pool: Pool, files: list[Path], process_func, out_path: Path, label: str):
     if not files:
@@ -57,12 +60,15 @@ def index_vsi_dataset(
     slide_dir: Path,
     index_dir: Path,
     split_path: Path,
-    params: dict,
+    patch_size: int,
+    downsample: int,
+    min_coverage: float,
+    exclude_pattern: str = "_all_",
     workers: int | None = None,
     dry_run: bool = False,
 ):
     splits = (
-        create_vsi_split(slide_dir, split_path, params.get("exclude_pattern", "_all_"))
+        create_vsi_split(slide_dir, split_path, exclude_pattern)
         if not split_path.exists()
         else json.loads(split_path.read_text())
     )
@@ -71,14 +77,11 @@ def index_vsi_dataset(
         set(splits.get("test", [])),
     )
     all_files = sorted(slide_dir.glob("*.vsi"))
-    if "exclude_pattern" in params:
-        all_files = [
-            f
-            for f in all_files
-            if params["exclude_pattern"].lower() not in f.name.lower()
-        ]
+
+    all_files = [f for f in all_files if exclude_pattern.lower() not in f.name.lower()]
+
     if dry_run:
-        all_files = all_files[:2]
+        all_files = all_files[:DRY_RUN_MAX_SLIDES]
     if train_names:
         train_files = [f for f in all_files if f.name in train_names]
     else:
@@ -86,10 +89,9 @@ def index_vsi_dataset(
     test_files = [f for f in all_files if f.name in test_names]
     process_func = partial(
         process_vsi_slide,
-        patch_size=params["patch_size"],
-        downsample=params["downsample"],
-        stride=params["stride"],
-        min_coverage=params["cov"],
+        patch_size=patch_size,
+        downsample=downsample,
+        min_coverage=min_coverage,
         dry_run=dry_run,
     )
     with Pool(workers or os.cpu_count() or 1) as pool:

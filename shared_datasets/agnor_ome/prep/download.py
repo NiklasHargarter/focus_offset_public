@@ -1,7 +1,6 @@
 import concurrent.futures
 import os
 import shutil
-import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional

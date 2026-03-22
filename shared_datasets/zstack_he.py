@@ -20,7 +20,6 @@ _cov_str = f"{COV:.2f}".replace(".", "")
 INDEX_DIR = CACHE_ROOT / NAME / f"ds{DOWNSAMPLE}_cov{_cov_str}"
 SPLIT_PATH = SPLITS_ROOT / f"{NAME}.json"
 PATCH_SIZE = 224
-STRIDE = PATCH_SIZE * DOWNSAMPLE
 EXCLUDE_PATTERN = "_all_"
 
 
@@ -65,18 +64,14 @@ def download_zstack_he(workers: int = 4):
 
 
 def preprocess_zstack_he(workers: int | None = None, dry_run: bool = False):
-    params = {
-        "downsample": DOWNSAMPLE,
-        "cov": COV,
-        "patch_size": PATCH_SIZE,
-        "stride": STRIDE,
-        "exclude_pattern": EXCLUDE_PATTERN,
-    }
     index_vsi_dataset(
         slide_dir=SLIDE_DIR,
         index_dir=INDEX_DIR,
         split_path=SPLIT_PATH,
-        params=params,
+        patch_size=PATCH_SIZE,
+        downsample=DOWNSAMPLE,
+        min_coverage=COV,
+        exclude_pattern=EXCLUDE_PATTERN,
         workers=workers,
         dry_run=dry_run,
     )

@@ -55,3 +55,4 @@ include = ["shared_datasets*", "focus_offset*", "synthetic_data*"]
 train = "focus_offset.scripts.train:main"
 train_models = "focus_offset.scripts.train_models:main"
 predict_models = "focus_offset.scripts.predict_models:main"
+train_suite = "synthetic_data.scripts.run_experiment_suite:main"

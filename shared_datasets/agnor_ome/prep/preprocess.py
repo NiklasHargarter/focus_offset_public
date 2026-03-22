@@ -7,6 +7,16 @@ from pathlib import Path
 
 from focus_offset.utils.focus_metrics import compute_focus_score
 
+# Tissue detection constants
+MASK_DOWNSCALE = 8
+DEFAULT_MIN_COVERAGE = 0.2
+
+# Fallback constants
+DEFAULT_Z_RES_MICRONS = 1.0
+
+# Dry-run limits
+DRY_RUN_MAX_PATCHES = 20
+
 
 def detect_tissue_mask(thumbnail_rgb: np.ndarray) -> np.ndarray:
     pipeline = Compose([RgbToGrayscale(), OtsuThreshold()])
@@ -15,14 +25,18 @@ def detect_tissue_mask(thumbnail_rgb: np.ndarray) -> np.ndarray:
 
 
 def generate_tissue_patches(
-    width: int, height: int, params: dict, mask: np.ndarray
+    width: int,
+    height: int,
+    patch_size: int,
+    downsample: int,
+    min_coverage: float,
+    mask: np.ndarray,
 ) -> list[tuple[int, int, float]]:
-    patch_size_raw = params["patch_size"] * params.get("downsample", 1)
-    stride = params["stride"]
-    mask_downscale = 8  # hardcoded as per user request for simplicity
+    patch_size_raw = patch_size * downsample
+    mask_downscale = MASK_DOWNSCALE  # consistent with VSI pipeline
 
-    xs = range(0, width - patch_size_raw + 1, stride)
-    ys = range(0, height - patch_size_raw + 1, stride)
+    xs = range(0, width - patch_size_raw + 1, patch_size_raw)
+    ys = range(0, height - patch_size_raw + 1, patch_size_raw)
 
     mw, mh = patch_size_raw // mask_downscale, patch_size_raw // mask_downscale
     binary = mask > 0
@@ -36,7 +50,7 @@ def generate_tissue_patches(
             ]
             if patch.size > 0:
                 coverage = float(patch.mean())
-                if coverage >= params.get("cov", 0.2):
+                if coverage >= min_coverage:
                     results.append((x, y, coverage))
     return results
 
@@ -83,13 +97,14 @@ def read_thumbnail_rgb(
 
 
 def process_ome_slide(
-    slide_path: str, params: dict, dry_run: bool = False
+    slide_path: str,
+    patch_size: int,
+    downsample: int,
+    min_coverage: float,
+    dry_run: bool = False,
 ) -> list[dict]:
     img_path = Path(slide_path)
-    patch_size = params["patch_size"]
-    downsample = params.get("downsample", 1)
-    raw_extent = patch_size * downsample
-    mask_downscale = 8
+    mask_downscale = MASK_DOWNSCALE
 
     reader = OMEImageReader(img_path)
     width, height = reader.size
@@ -106,13 +121,15 @@ def process_ome_slide(
         if pixels is not None and "PhysicalSizeZ" in pixels.attrib:
             z_res_microns = float(pixels.attrib["PhysicalSizeZ"])
         else:
-            z_res_microns = 1.0  # Fallback
+            z_res_microns = DEFAULT_Z_RES_MICRONS  # Fallback
     except Exception:
-        z_res_microns = 1.0
+        z_res_microns = DEFAULT_Z_RES_MICRONS
 
     thumbnail = read_thumbnail_rgb(reader, width, height, mask_downscale)
     mask = detect_tissue_mask(thumbnail_rgb=thumbnail)
-    candidates = generate_tissue_patches(width, height, params, mask)
+    candidates = generate_tissue_patches(
+        width, height, patch_size, downsample, min_coverage, mask
+    )
 
     if not candidates:
         reader.close()
@@ -122,7 +139,7 @@ def process_ome_slide(
         import random
 
         random.shuffle(candidates)
-        candidates = candidates[:20]
+        candidates = candidates[:DRY_RUN_MAX_PATCHES]
 
     all_scores = []
     best_zs = np.zeros(len(candidates), dtype=np.int32)
@@ -132,7 +149,13 @@ def process_ome_slide(
             print(f"[{img_path.name}] focus {i}/{len(candidates)}")
 
         z_stack = reader.read_block(
-            rect=(int(x), int(y), raw_extent, raw_extent), slices=(0, num_z)
+            rect=(
+                int(x),
+                int(y),
+                patch_size * downsample,
+                patch_size * downsample,
+            ),
+            slices=(0, num_z),
         )
 
         if z_stack.ndim == 4 and z_stack.shape[-1] == 1:

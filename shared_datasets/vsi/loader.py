@@ -90,7 +90,10 @@ def get_vsi_dataloaders(
 
 
 def get_vsi_test_loader(
-    test_parquet: Path, slide_dir: Path, downsample: int, train_cfg: TrainConfig
+    test_parquet: Path,
+    slide_dir: Path,
+    downsample: int,
+    train_cfg: TrainConfig,
 ) -> DataLoader:
     test_df = pd.read_parquet(test_parquet)
     test_ds = get_vsi_dataset(
