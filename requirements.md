@@ -1,92 +1,79 @@
-# Focus Offset Prediction — Master Plan
+# Focus Offset Prediction — Project Blueprint & Requirements
 
-## Project Context
+## 1. Project Context & Objectives
+This is a research project investigating focus offset prediction for z-stacks from whole slide imaging (WSI) in digital pathology. The overarching goal is to maximize knowledge gained, investigate domain generalization, and validate theories, rather than attempting to build a production-ready software application.
 
-This is a master's research project investigating whether deep learning models can predict the **focus offset** of a Whole Slide Image (WSI) patch — the signed distance in micrometres between the current Z-plane and the optimal focal plane — without any motorised hardware sweep.
-
-**Constraints:**
-- Limited GPU budget (RTX 5090 available, but compute time must be treated as scarce).
-- Research-grade code: results must be credible and reproducible, not optimised for production.
-- All data is non-human or fully public; no patient-data obligations apply.
+The project revolves around two main pillars:
+1. **Focus Offset Prediction:** Predicting the signed distance the microscope z-axis needs to be adjusted to reach optimal focus, using purely a single out-of-focus image patch. A major focus is discovering methods to achieve stain and sample generalization (e.g., train on HE and test on IHC).
+2. **Synthetic Data Generation & Kernel Learning:** Using a known operator approach to learn dataset-specific offset blur kernels. This allows inspection of the physical form of an offset blur, and ultimately, utilization of these kernels to generate synthetic out-of-focus data that improves model stability and domain generalization.
 
 ---
 
-## Objective
+## 2. Codebase Architecture: AI-Optimized "Grey Box" Modules
+A strictly enforced project requirement is that the codebase must be optimized for navigation and modification by AI agents. This is achieved through the architectural pattern of **Deep Modules** with **Slim Interfaces**.
 
-Given a **224×224 RGB image patch** from a WSI, predict the signed focus offset in **micrometres (µm)** in a single forward pass — without any additional inputs such as Z-level index or scanner metadata. The model must infer defocus purely from visual appearance.
-
-The Z-level index is used only during training to compute the supervision target (`(best_z − current_z) × z_resolution_µm`). At inference time the model receives only the image.
-
----
-
-## Datasets
-
-The project uses four datasets with distinct roles. Each must be fully self-contained — its own download, preprocessing, and `Dataset` implementation — so that changes to one never affect another.
-
-| Dataset | Format | Domain | Role |
-|---|---|---|---|
-| **ZStack HE** | Olympus VSI | In-domain | Primary training set |
-| **ZStack IHC** | Olympus VSI | In-domain | Stain-generalisation control (same scanner, same slides, different stain) |
-| **AgNor OME** | OME-TIFF | Out-of-domain | Scanner-generalisation probe (different equipment and tissue) |
-| **Jiang2018** | JPEG tiles (public) | Out-of-domain | External benchmark; used by other published works for direct comparison |
-
-
-**Label unit consistency:** every dataset must convert its native label encoding (e.g. nm in filenames, Z-index × scanner resolution) to µm inside its `Dataset` class before anything else sees the target value.
-
-**Sign convention:** all datasets must use the same physical sign convention. The reference is Jiang2018, whose labels are signed physical offsets from the in-focus plane (range −10 µm to +10 µm, step 0.5 µm). For VSI datasets the label is computed as `(best_z − current_z) × z_resolution_µm`, which is positive when the current patch is below the focal plane and negative when above it.
-
-> **⚠ Verification required:** the physical direction of increasing Z index in the Olympus VSI scanner must be confirmed to align with Jiang's positive/negative convention. If the scanner's Z axis runs in the opposite direction, all VSI targets must be negated (`(current_z − best_z) × z_resolution_µm`) to remain compatible. This must be verified empirically by visual inspection — load a slide at a known below-focus and above-focus Z level and confirm the sign of the resulting target matches the Jiang convention before training.
-
+- **Grey Box Pattern:** The developer owns the top-level interfaces and architectural seams; the AI owns the internal implementations. 
+- **Progressive Disclosure:** Each module must live in its own folder exposing a clean, simple public interface. The AI must be able to comprehend the system's capabilities by reading the interfaces without digging into the implementation loops.
+- **Test-Driven Lockdown:** Every module must have matching tests (mocked or real data) that lock down its expected behavior. If tests pass, the module's internal logic is trusted without manual inspection.
+- **Reduced Cognitive Load:** High-level execution scripts (e.g., for training focus offset or learning synthetic kernels) should remain as slim orchestrators that instantiate and connect the deep modules via declarative configurations.
 
 ---
 
-## Pipeline
+## 3. Data Foundation & Serving Architecture
+The project utilizes four distinct dataset sources with differing metadata, file types, and purposes:
+1. **ZStack HE** (Olympus VSI, own team) - Primary in-domain training data.
+2. **ZStack IHC** (Olympus VSI, own team) - Stain-generalization control (same slides/scanner, different stain).
+3. **AgNor** (OME-TIFF, own team) - Scanner-generalization probe.
+4. **Jiang2018** (JPEG patches, public) - External benchmark.
 
-### 1. Data Preparation
+### Shared Index & Split Datasets Pattern
+Data loading must NOT duplicate underlying pre-work. The architecture requires a **Shared Data Foundation/Indexer** that handles:
+- Patch splitting computations.
+- Resolving optimal z-levels.
+- Maintaining strict train/val/test splits at the **slide level** to prevent cross-contamination.
 
-- Download and extraction must be automatable and resumable; re-running must be idempotent.
-- Preprocessing results must be cached to disk so they survive session restarts and are never recomputed unnecessarily.
-- Corrupt or missing source files must be logged and skipped, not treated as fatal errors.
-- Train and test data must be split at the **slide level** to prevent patches from the same slide appearing in both sets.
+### Dataset Sharing & Archival Strategy
+Once preprocessing and filtering routines are validated, the parsed dataset must be securely shareable and portable.
+- To prevent massive storage inflation, extracted patches must **not** be saved to disk as individual image files.
+- The final shareable dataset artifact must consist strictly of the **original raw WSI files (VSI/OME-TIFF)** paired with **plain-text, machine-readable index files (e.g., CSV or JSON Lines)**. These index files must be easily inspectable and suitable for checking into version control (Git). They must simply contain the **spatial patch origin coordinates (x, y)**, the **z-plane indices**, and the computed focus offsets, allowing the data loader to dynamically extract the patches from the raw WSI at runtime (e.g., via `slideio`) without creating any intermediate image files on disk.
 
-### 2. Training
-
-- Models must be **lightweight** — small enough to converge within a single GPU session, enabling multiple experiment iterations.
-- A **dry-run / smoke-test mode** must exist to validate the full pipeline cheaply before committing real GPU time.
-- Training must be **reproducible**: fixed seeds, versioned split files, and all hyperparameters logged alongside results.
-- The pipeline must be **model-agnostic**: swapping or adding a model variant requires minimal changes.
-
-### 3. Evaluation
-
-- Metrics must be reported in physical units (µm): **MAE** and **Median Absolute Error** at minimum.
-- For Jiang2018, the published evaluation protocol must be followed exactly to allow direct comparison with other works.
-- Every result file must be **self-describing**: model name, dataset, checkpoint, and config must be recorded so results can be reconstructed without relying on memory or commit history.
-
----
-
-## Principles
-
-### Isolation Over Premature Abstraction
-Duplication between datasets and model variants is explicitly preferred over shared abstractions. Each component owns its full lifecycle. A change to one must never require touching another. Shared code is only acceptable for truly generic, stable helpers.
-
-### Prefer External Libraries
-Custom implementations introduce bugs and maintenance burden. Established libraries must be used wherever they exist (e.g. `slideio`/`tifffile` for slide reading, `timm` for model backbones, `albumentations` for augmentation, Accelerate for training infrastructure). Custom code should be limited to what is genuinely novel to this project.
-
-### Open, Non-Proprietary Formats
-All outputs must be readable without this codebase:
-- Predictions and metrics → **CSV**
-- Dataset splits → **JSON**
-- Model weights → **PyTorch state dict (`.pt`)**
-
-### Hypothesis-Driven Experiments
-Every model variant or ablation must test a specific, stated hypothesis. The hypothesis must be documented alongside the experiment. Results without a documented hypothesis are hard to interpret and build on.
+On top of this unified foundation, distinct PyTorch `Dataset` interfaces wrap the indexer to yield task-specific pairs with explicitly distinct sample definitions:
+- **`OffsetPredictionDataset`**: For the primary prediction task, a sample is defined as a specific Z-level image from a specific patch. The total dataset size is `sum(slides × patches × available_z_levels)`. It yields `(any_patch, signed_focus_offset)`.
+- **`SyntheticPairDataset`**: For the kernel learning experiment, a sample requires a matching offset pair. For any given offset (e.g. +10µm), a sample can exist *at most once* per patch, and may not exist at all if the individual stack's z-range does not extend that far. It filters the index strictly to yield `(infocus_patch, target_offset_patch)`.
 
 ---
 
-## Engineering Standards
+## 4. Experimental Requirements & Ablations
 
-- **Type safety**: `mypy` must pass; all public functions and classes must be annotated.
-- **Linting**: `ruff` enforced.
-- **Tests**: `pytest` smoke tests covering data loading, model forward pass, and loss computation — runnable without real data or GPU.
-- **Documentation**: CLI commands for all major steps must be documented. Design decisions should be captured so context is not lost over time.
-- **Dependency management**: a single `uv sync` must be sufficient to reproduce the environment.
+### A. Preprocessing & Tissue Filtering Validation
+Tissue filtering, masking, and optimal downscaling factors are complex operations currently governed by untracked config values lost in Git history.
+- These preprocessing steps must be elevated to formalized, trackable experiments rather than hand-tuned constants.
+- The pipeline must systematically ablate and validate filtering thresholds (e.g., background thresholding, tissue boundaries) and downsample scales.
+- The recorded outcomes of these studies will explicitly prove the robustness of the chosen preprocessing configuration and highlight the complexity of the data preparation phase.
+
+### B. Feature Domain Ablation (Spatial vs. Frequency)
+To evaluate pathways for model agnosticism, the pipeline must support dynamic toggling and combinations of input transforms.
+- Readily inject spatial (RGB, Grayscale) or frequency (FFT, DWT) transforms into the model pipeline.
+- Ensure the codebase can rapidly deploy ablation studies comparing these domains without requiring hardcoded structural changes in core model components.
+
+### C. Stain Invariance & Augmentations
+To prevent overfitting on stain-specific information, the augmentation pipeline must be treated as a primary experimental variable.
+- Augmentations must *not* be deeply hardcoded into data loaders.
+- The system must provide a clean, configurable mechanism to swap, define, and execute ablation studies against specific augmentations (e.g., color jitter, stain normalization).
+
+### D. Synthetic Kernel Learning
+- The project will learn specific target blur kernels corresponding to physical focus offsets per dataset (or grouped constraints).
+- **Phase 1 (Simulation Validations):** Learn and visually inspect the kernels against mathematically generated targets to prove their correctness. To protect empirical integrity, the codebase must **strictly separate simulation logic from real-data logic** via completely distinct `Dataset` classes and orchestrator scripts, heavily forbidding "unsafe" boolean config flags that could cross-contaminate result logs.
+- **Phase 2 (True Point-Spread Function):** Utilize the proven mathematical models to safely predict the true physical defocus blur from genuine, real-world `(infocus, defocus)` pairs.
+
+---
+
+## 5. Engineering & Reproducibility Standards
+
+- **Models:** Built intentionally simple. Architecture complexity should only be introduced when attempting to prove a specific hypothesis.
+- **Configuration Philosophy:** The current configuration structure must be completely rethought to avoid overly bloated config objects:
+  - **Fixed Constants:** Values that do not change (e.g. fixed domain constraints, standard kernel block sizes) must be hard-coded near where they are used to keep modules self-contained.
+  - **Dynamic Parameters:** Configurations should strictly be limited to structural environment variables (e.g., dataset paths, hardware toggles) and explicitly active experimental hyperparameters (e.g., learning rates, ablation toggles).
+- **Living Context File (`research.md`):** Agents must be continuously pointed to `research.md` for fast, hyper-relevant, and short-lived technical context (e.g., active bugs, environment tooling like `uv`, or helper functions like `suppress_stderr` for VSI reads). This file must be kept up-to-date and aggressively pruned as work phases conclude.
+- **Outputs & Logging:** All experiment artifacts must be meticulously structured. Metrics, hyperparameter configs, and model weights must be continuously saved enabling seamless tracking, replication, and publication of results.
+- **Tests First:** All distinct operational boundaries must have functional tests to uphold the "AI owns the implementation, tests keep it honest" contract.
