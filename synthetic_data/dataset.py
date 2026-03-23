@@ -40,6 +40,19 @@ class SyntheticVSIDataset(Dataset):
         else:
             df = index_df
 
+        # Drop patches where the target z-slice would be out of bounds.
+        if "num_z" in df.columns:
+            target_z = df["optimal_z"] + config.z_offset_steps
+            valid = (target_z >= 0) & (target_z < df["num_z"])
+            n_before = len(df)
+            df = df[valid].reset_index(drop=True)
+            n_dropped = n_before - len(df)
+            if n_dropped > 0:
+                print(
+                    f"[Dataset] Dropped {n_dropped}/{n_before} patches "
+                    f"(target z out of range for offset={config.z_offset_steps})"
+                )
+
         self.df = df
         self.slide_dir = Path(slide_dir)
         self.patch_size_input = config.patch_size_input

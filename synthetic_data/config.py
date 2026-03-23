@@ -50,7 +50,7 @@ class SyntheticConfig:
             else f"off{self.z_offset_steps}"
         )
         name = (
-            f"conv_k{self.kernel_size}_{mode_prefix}_g{self.groups}_{self.weight_init}"
+            f"conv_k{self.kernel_size}_{mode_prefix}_{self.dataset_name}_g{self.groups}_{self.weight_init}"
         )
         if self.dry_run:
             name += "_dry_run"
