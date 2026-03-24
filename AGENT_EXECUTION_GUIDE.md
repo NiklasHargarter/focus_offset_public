@@ -30,7 +30,7 @@ This rewrite is happening *in-place* alongside the old code, but you are specifi
 
 ## 5. Verification
 You must prove the slice works. Every plan requires a "dry run" or demoable execution path. Run the orchestrator script utilizing your new slice and verify it logs outputs correctly without crashing.
-**CRITICAL:** The pathology datasets (HE/IHC) are hundreds of gigabytes. A full preprocessing run will easily hang your execution context for hours. **Never run verification loops against the entire dataset.** You are strictly mandated to enforce heavy sub-sampling (e.g., explicitly limit `DataLoader` size to 2 slides or subset the Pandas dataframe to 10 rows) during development tests to guarantee rapid evaluation.
+**CRITICAL THE SMALL SUBSET MANDATE:** The pathology datasets (HE/IHC) are hundreds of gigabytes. A full preprocessing run will easily hang your execution context for hours. **You are strictly mandated to only ever develop, verify, and execute against the `small` dataset (`data/he_small/`) unless absolutely dictated otherwise.** Never run verification loops against the entire dataset. Always explicitly point your execution paths to the sub-sampled `small` index. Furthermore, even when using the `small` dataset, you must still explicitly hardcode runtime loop limits (e.g., `limit_slides=1`, `limit_patches=10`) during your initial dry-runs to ensure your verification feedback loop is instant (under 10 seconds) rather than waiting minutes for the entire `small` subset to process.
 
 ## 6. Completion
 Once verified, update the plan's `.md` file to append an execution summary, check off its tasks, and notify the user that the phase is formally complete.
