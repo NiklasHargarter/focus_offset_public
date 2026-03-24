@@ -21,14 +21,16 @@ A tracer bullet phase is a **thin, vertical integration slice**, completely cutt
 - Fill in the implementation.
 - Wire it to the CLI orchestrating script.
 
-## 4. In-Place Transformation & Salvage
-This rewrite is happening *in-place*. 
-- Build the new architecture in new module namespaces (e.g., `core/` or `v2/`).
-- Copy mathematically complex logic (like specific FFT transforms or `slideio` bindings) from the legacy codebase into your new modules.
-- **Do not delete legacy folders** until your new vertical slice is 100% complete, tested, and verifiably replaces them. 
+## 4. Clean Slate, In-Place Construction
+This rewrite is happening *in-place* alongside the old code, but you are specifically building a **Clean Slate Architecture**. 
+- The legacy codebase is only a reference for specific technical domain math (like FFT logic or `slideio` bindings). You are absolutely not required to keep *any* of the old architectural design if a better, more robust PyTorch or Python pattern exists.
+- Build the new architecture in entirely new module namespaces (e.g., `src/core/` or `src/data/`).
+- Copy mathematically complex, working routines from the legacy codebase into your clean, modern modules.
+- **Do not delete legacy folders** until your new vertical slice is 100% complete, tested, and verifiably replaces them.
 
 ## 5. Verification
 You must prove the slice works. Every plan requires a "dry run" or demoable execution path. Run the orchestrator script utilizing your new slice and verify it logs outputs correctly without crashing.
+**CRITICAL:** The pathology datasets (HE/IHC) are hundreds of gigabytes. A full preprocessing run will easily hang your execution context for hours. **Never run verification loops against the entire dataset.** You are strictly mandated to enforce heavy sub-sampling (e.g., explicitly limit `DataLoader` size to 2 slides or subset the Pandas dataframe to 10 rows) during development tests to guarantee rapid evaluation.
 
 ## 6. Completion
 Once verified, update the plan's `.md` file to append an execution summary, check off its tasks, and notify the user that the phase is formally complete.

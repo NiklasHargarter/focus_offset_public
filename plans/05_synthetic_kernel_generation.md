@@ -10,8 +10,8 @@
 ## Vertical Slice Execution Steps
 1. **Teacher Kernel Generator:** Extract and upgrade the `get_teacher_kernel` logic to support both the existing morphological `disk` (circle) as well as a new `square` shape.
 2. **Explicit `SimulationDataset`:** Rip out the unsafe `simulation_mode` boolean config flag. Create a strictly isolated `SimulationDataset` Python class that *only* serves mathematically convolved targets and explicitly documents its simulation nature. This absolutely prevents any accidental confusion with real data results.
-3. **Simulation Orchestrator:** Create `train_synthetic_sim.py`. This distinct script instantiates the `SimulationDataset`, applies the chosen Teacher Kernel on the GPU, and trains the model strictly to minimize `K-MAE`.
-4. **Verify:** Run the orchestrator twice: once with the `circle` teacher and once with the `square` teacher. Confirm the model successfully learns both shapes and correctly plots the recovered kernel heatmaps.
+3. **Simulation Orchestrator:** Create the primary training pipeline script. It instantiates the `SimulationDataset`, applies the Teacher Kernel on the GPU, and trains the model to minimize `K-MAE` without any plotting side-effects.
+4. **Visual Proof Experiment:** Create an explicit, isolated visualization script that runs the trained model and utilizes **seaborn** to plot the recovered kernel heatmaps versus the true teacher kernel, proving morphological recovery. Verify this works for both the circle and square shapes.
 
 ## Completion Criteria
 - [ ] Teacher kernel supports dynamically switching between circle and square.
